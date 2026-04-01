@@ -1,0 +1,5 @@
+.terraform/
+*.tfstate*
+*.pem
+api_files.zip
+terraform.tfvars
