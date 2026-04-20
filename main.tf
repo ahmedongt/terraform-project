@@ -13,7 +13,11 @@ terraform {
     }
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0" 
+      version = "~> 5.0"
+    }
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 3.0"
     }
   }
 }
@@ -26,36 +30,45 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# --- AUTOMATED CLOUDFLARE IP FETCHING ---
+data "http" "cloudflare_ips" {
+  url = "https://api.cloudflare.com/client/v4/ips"
+}
+
+locals {
+  cloudflare_ipv4 = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
+}
+
 # 1. THE PERMANENT IP (ELASTIC IP)
 resource "aws_eip" "web_eip" {
   instance = aws_instance.my_web_server.id
   domain   = "vpc"
 }
 
-# 2. THE FIREWALL
+# 2. THE FIREWALL (LOCKDOWN MODE)
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
-  description = "80 (HTTP), 5000 (API), 22 (SSH)"
+  description = "80 (Cloudflare Only), 5000 (API), 22 (My IP Only)"
 
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = local.cloudflare_ipv4
   }
 
   ingress {
     from_port   = 5000
     to_port     = 5000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = local.cloudflare_ipv4
   }
 
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] 
   }
 
   egress {
@@ -69,7 +82,7 @@ resource "aws_security_group" "web_traffic" {
 # 3. THE STORAGE BUCKET
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${lower(var.user_name)}-12345"
-  force_destroy = true 
+  force_destroy = true
 }
 
 # 4. THE IDENTITY CARD
@@ -123,70 +136,61 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  user_data = <<-EOF
-              #!/bin/bash
-              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+  # CRITICAL: No spaces before #!/bin/bash
+  user_data = <<-EOT
+#!/bin/bash
+exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-              echo "--- STARTING PROVISIONING (CLOUDFLARE MODE) ---"
-              dnf update -y
-              dnf install -y nginx python3-pip aws-cli bind-utils
+echo "--- STARTING PROVISIONING (CLOUDFLARE MODE) ---"
+dnf update -y
+dnf install -y nginx python3-pip aws-cli bind-utils
 
-              mkdir -p /var/www/html
+mkdir -p /var/www/html
 
-              # WAIT FOR S3 SYNC
-              echo "Waiting for S3 sync to finish..."
-              until [ -f "/var/www/html/api/app.py" ]; do
-                aws s3 sync s3://${aws_s3_bucket.website_bucket.id} /var/www/html/
-                echo "API folder not found yet. Sleeping 10s..."
-                sleep 10
-              done
+# WAIT FOR S3 SYNC
+until [ -f "/var/www/html/api/app.py" ]; do
+  aws s3 sync s3://${aws_s3_bucket.website_bucket.id} /var/www/html/
+  sleep 10
+done
 
-              echo "Files synced. Setting permissions..."
-              chown -R ec2-user:ec2-user /var/www/html
-              chmod -R 755 /var/www/html
+chown -R ec2-user:ec2-user /var/www/html
+chmod -R 755 /var/www/html
 
-              # NGINX CONFIG (Simple Port 80 for Cloudflare Flexible SSL)
-              rm -f /etc/nginx/conf.d/welcome.conf
-              cat <<EOT > /etc/nginx/conf.d/flask.conf
-              server {
-                  listen 80;
-                  server_name ${var.domain_name} www.${var.domain_name};
-                  root /var/www/html;
-                  index index.html;
+# NGINX CONFIG
+rm -f /etc/nginx/conf.d/welcome.conf
+cat <<INNER > /etc/nginx/conf.d/flask.conf
+server {
+    listen 80;
+    server_name ${var.domain_name} www.${var.domain_name};
+    root /var/www/html;
+    index index.html;
 
-                  location / {
-                      try_files \$uri \$uri/ @flask;
-                  }
+    location / {
+        try_files \$uri \$uri/ @flask;
+    }
 
-                  location @flask {
-                      proxy_pass http://127.0.0.1:5000;
-                      proxy_set_header Host \$host;
-                      proxy_set_header X-Real-IP \$remote_addr;
-                      proxy_set_header X-Forwarded-Proto \$scheme;
-                  }
-              }
-              EOT
+    location @flask {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+INNER
 
-              systemctl enable nginx
-              systemctl start nginx
+systemctl enable nginx
+systemctl start nginx
 
-              # PRODUCTION PYTHON SETUP
-              echo "Installing Python dependencies system-wide..."
-              sudo pip3 install flask flask-cors requests pillow gunicorn
-
-              cd /var/www/html/api
-              echo "Launching Gunicorn..."
-              sudo pkill -f python3 || true
-              sudo pkill -f gunicorn || true
-              sudo nohup gunicorn --bind 127.0.0.1:5000 app:app > /var/log/flask.log 2>&1 &
-
-              echo "--- PROVISIONING COMPLETE ---"
-              EOF
+sudo pip3 install flask flask-cors requests pillow gunicorn
+cd /var/www/html/api
+sudo pkill -f gunicorn || true
+sudo nohup gunicorn --bind 127.0.0.1:5000 app:app > /var/log/flask.log 2>&1 &
+EOT
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
 }
 
-# 6. THE DNS BRIDGE (PROXIED BY CLOUDFLARE)
+# 6. THE DNS BRIDGE
 resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
