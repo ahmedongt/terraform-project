@@ -7,19 +7,27 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-# 1. SET UP THE STORAGE FOLDER
-# Using the absolute path where Nginx/S3 stores your files
-BASE_DIR = '/var/www/html'
-DOWNLOAD_FOLDER = os.path.join(BASE_DIR, 'downloads')
+# --- 1. DYNAMIC PATH SETUP ---
+# This finds exactly where your app.py is located
+API_DIR = os.path.dirname(os.path.abspath(__file__)) 
+# This finds the 'website' folder in your main project directory
+PROJECT_ROOT = os.path.dirname(API_DIR)
+WEBSITE_DIR = os.path.join(PROJECT_ROOT, 'website')
+# This puts the downloads inside the api folder
+DOWNLOAD_FOLDER = os.path.join(API_DIR, 'downloads')
 
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# --- THE MISSING "FRONT DOOR" ROUTE ---
+# --- 2. THE FRONT DOOR (Serve index.html) ---
 @app.route('/')
 def home():
-    # This serves your index.html when you visit the main domain
-    return send_from_directory(BASE_DIR, 'index.html')
+    return send_from_directory(WEBSITE_DIR, 'index.html')
+
+# --- 3. SERVE CSS/JS/IMAGES ---
+@app.route('/<path:path>')
+def static_files(path):
+    return send_from_directory(WEBSITE_DIR, path)
 
 def get_video_id(url):
     if 'youtu.be/' in url:
@@ -28,7 +36,7 @@ def get_video_id(url):
         return url.split('v=')[-1].split('&')[0]
     return None
 
-# 2. THE MAIN ROUTE: GRAB AND SAVE THUMBNAIL
+# --- 4. MAIN ROUTE: GRAB AND SAVE THUMBNAIL ---
 @app.route('/get-thumb', methods=['GET'])
 def get_thumbnail():
     video_url = request.args.get('url')
@@ -50,11 +58,9 @@ def get_thumbnail():
         filename = f"thumb_{video_id}.jpg"
         file_path = os.path.join(DOWNLOAD_FOLDER, filename)
 
-        # Physically save the file to the AWS server
         with open(file_path, 'wb') as f:
             f.write(response.content)
 
-        # Send back the URL paths for the frontend
         return jsonify({
             "filename": filename,
             "view_url": f"/view/{filename}",
@@ -63,20 +69,19 @@ def get_thumbnail():
     
     return jsonify({"error": "Failed to fetch thumbnail"}), 500
 
-# 3. THE VIEW ROUTE: ALLOWS BROWSER TO SEE THE IMAGE
+# --- 5. VIEW AND DELETE ROUTES ---
 @app.route('/view/<filename>')
 def view_file(filename):
     return send_from_directory(DOWNLOAD_FOLDER, filename)
 
-# 4. THE DELETE ROUTE: WIPES FILE FROM SERVER
 @app.route('/delete/<filename>', methods=['DELETE', 'GET'])
 def delete_file(filename):
     file_path = os.path.join(DOWNLOAD_FOLDER, filename)
     if os.path.exists(file_path):
         os.remove(file_path)
-        return jsonify({"message": "File deleted from server"}), 200
+        return jsonify({"message": "File deleted"}), 200
     return jsonify({"error": "File not found"}), 404
 
 if __name__ == '__main__':
-    # Run on all interfaces so Nginx can talk to it
-    app.run(host='0.0.0.0', port=5000)
+    # host='0.0.0.0' allows access from your browser to the WSL/Linux side
+    app.run(host='0.0.0.0', port=5000, debug=True)
