@@ -3,3 +3,9 @@
 *.pem
 api_files.zip
 terraform.tfvars
+
+venv/
+aws/
+awscliv2.zip
+api_files.zip
+__pycache__/

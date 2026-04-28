@@ -48,8 +48,9 @@ resource "aws_eip" "web_eip" {
 # 2. THE FIREWALL (LOCKDOWN MODE)
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
-  description = "80 (Cloudflare Only), 5000 (API), 22 (My IP Only)"
+  description = "80 (Cloudflare Only), 5000 (API Only), 22 (SSH)"
 
+  # HTTP (Frontend Container)
   ingress {
     from_port   = 80
     to_port     = 80
@@ -57,6 +58,7 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
+  # API (Backend Container)
   ingress {
     from_port   = 5000
     to_port     = 5000
@@ -64,6 +66,7 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
+  # SSH (Your IP)
   ingress {
     from_port   = 22
     to_port     = 22
@@ -85,7 +88,7 @@ resource "aws_s3_bucket" "website_bucket" {
   force_destroy = true
 }
 
-# 4. THE IDENTITY CARD
+# 4. THE IDENTITY CARD (IAM)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${var.user_name}"
   assume_role_policy = jsonencode({
@@ -127,7 +130,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER
+# 5. THE SERVER (DOCKER HOST)
 resource "aws_instance" "my_web_server" {
   ami                         = "ami-05b10e08d247fb927"
   instance_type               = var.instance_type
@@ -136,56 +139,27 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  # CRITICAL: No spaces before #!/bin/bash
-  user_data = <<-EOT
-#!/bin/bash
-exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+  user_data = <<-EOF
+              #!/bin/bash
+              # Log output for debugging
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-echo "--- STARTING PROVISIONING (CLOUDFLARE MODE) ---"
-dnf update -y
-dnf install -y nginx python3-pip aws-cli bind-utils
+              echo "--- BOOTSTRAPPING DOCKER ---"
+              dnf update -y
+              dnf install -y docker aws-cli
+              systemctl start docker
+              systemctl enable docker
 
-mkdir -p /var/www/html
+              # Set permissions for ec2-user
+              usermod -a -G docker ec2-user
 
-# WAIT FOR S3 SYNC
-until [ -f "/var/www/html/api/app.py" ]; do
-  aws s3 sync s3://${aws_s3_bucket.website_bucket.id} /var/www/html/
-  sleep 10
-done
+              # Setup project directory
+              mkdir -p /var/www/html
+              chown -R ec2-user:ec2-user /var/www/html
+              chmod -R 755 /var/www/html
 
-chown -R ec2-user:ec2-user /var/www/html
-chmod -R 755 /var/www/html
-
-# NGINX CONFIG
-rm -f /etc/nginx/conf.d/welcome.conf
-cat <<INNER > /etc/nginx/conf.d/flask.conf
-server {
-    listen 80;
-    server_name ${var.domain_name} www.${var.domain_name};
-    root /var/www/html;
-    index index.html;
-
-    location / {
-        try_files \$uri \$uri/ @flask;
-    }
-
-    location @flask {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-INNER
-
-systemctl enable nginx
-systemctl start nginx
-
-sudo pip3 install flask flask-cors requests pillow gunicorn
-cd /var/www/html/api
-sudo pkill -f gunicorn || true
-sudo nohup gunicorn --bind 127.0.0.1:5000 app:app > /var/log/flask.log 2>&1 &
-EOT
+              echo "--- INFRASTRUCTURE READY ---"
+              EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
 }
