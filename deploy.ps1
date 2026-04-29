@@ -11,12 +11,12 @@ Write-Host "--- 2. Pulling to EC2 & Cleaning ---" -ForegroundColor Cyan
 # Pull files from S3 and wipe old containers
 ssh -i $Key -o StrictHostKeyChecking=no ec2-user@$IP "sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/; docker stop frontend backend || true; docker rm frontend backend || true"
 
-Write-Host "--- 3. Building & Starting API ---" -ForegroundColor Cyan
+Write-Host "--- 3. Building & Starting API (Self-Healing Enabled) ---" -ForegroundColor Cyan
 ssh -i $Key ec2-user@$IP "docker build -t thumb-backend /var/www/html/api/"
-ssh -i $Key ec2-user@$IP "docker run -d --name backend -p 5000:5000 thumb-backend"
+# Added --restart always for auto-healing
+ssh -i $Key ec2-user@$IP "docker run -d --name backend --restart always -p 5000:5000 thumb-backend"
 
 Write-Host "--- 4. Creating Nginx Proxy Config ---" -ForegroundColor Cyan
-# This tells Nginx to route /api requests to the Python container internally
 $nginxConf = @"
 server {
     listen 80;
@@ -31,12 +31,13 @@ server {
     }
 }
 "@
-# Save the config to the EC2
 ssh -i $Key ec2-user@$IP "echo '$nginxConf' | sudo tee /var/www/html/default.conf"
 
-Write-Host "--- 5. Launching Frontend (Secure Mode) ---" -ForegroundColor Cyan
-# We link the containers so Nginx can see 'backend' as a hostname
-ssh -i $Key ec2-user@$IP "docker run -d --name frontend -p 80:80 --link backend:backend -v /var/www/html/website/index.html:/usr/share/nginx/html/index.html -v /var/www/html/default.conf:/etc/nginx/conf.d/default.conf nginx:alpine"
+Write-Host "--- 5. Launching Frontend (Self-Healing & Secure Mode) ---" -ForegroundColor Cyan
+# Added --restart always for auto-healing
+# Added a tiny delay to ensure backend networking is ready
+Start-Sleep -Seconds 2
+ssh -i $Key ec2-user@$IP "docker run -d --name frontend --restart always -p 80:80 --link backend:backend -v /var/www/html/website/index.html:/usr/share/nginx/html/index.html -v /var/www/html/default.conf:/etc/nginx/conf.d/default.conf nginx:alpine"
 
 Write-Host "--- ALL DONE! MISSION ACCOMPLISHED ---" -ForegroundColor Green
-Write-Host "Refresh https://ytthumbnail.site and try a link!"
+Write-Host "Auto-healing active. Refresh https://ytthumbnail.site and try a link!"
