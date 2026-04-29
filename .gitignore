@@ -9,3 +9,5 @@ aws/
 awscliv2.zip
 api_files.zip
 __pycache__/
+
+api/downloads/*.jpg
