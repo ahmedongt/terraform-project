@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # This is the Python API
+  backend:
+    build: ./api
+    container_name: backend
+    restart: always
+    # We don't map ports to the host (5000:5000) anymore. 
+    # Nginx will talk to it internally, making it more secure.
+    expose:
+      - "5000"
+
+  # This is the Nginx Web Server
+  frontend:
+    image: nginx:alpine
+    container_name: frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    volumes:
+      - ./website:/usr/share/nginx/html:ro
+      - ./default.conf:/etc/nginx/conf.d/default.conf:ro

@@ -105,7 +105,7 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action = ["s3:GetObject", "s3:ListBucket"]
+        Action = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
         Effect = "Allow"
         Resource = [
           "${aws_s3_bucket.website_bucket.arn}",
@@ -141,17 +141,19 @@ resource "aws_instance" "my_web_server" {
 
   user_data = <<-EOF
               #!/bin/bash
-              # Log output for debugging
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-              echo "--- BOOTSTRAPPING DOCKER ---"
+              echo "--- BOOTSTRAPPING DOCKER & COMPOSE ---"
               dnf update -y
               dnf install -y docker aws-cli
               systemctl start docker
               systemctl enable docker
-
-              # Set permissions for ec2-user
               usermod -a -G docker ec2-user
+
+              # Install Docker Compose Standalone
+              curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              chmod +x /usr/local/bin/docker-compose
+              ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
 
               # Setup project directory
               mkdir -p /var/www/html

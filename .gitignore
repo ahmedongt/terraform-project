@@ -1,13 +1,25 @@
+# Terraform files - Comprehensive
 .terraform/
-*.tfstate*
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfstate.lock.info
+.terraform.lock.hcl
+*.broken
+*.log
+
+# Sensitive Credentials
 *.pem
-api_files.zip
-terraform.tfvars
+*.tfvars
+key.pem
 
+# Python/Environment files
 venv/
-aws/
-awscliv2.zip
-api_files.zip
 __pycache__/
+*.py[cod]
+.env
 
-api/downloads/*.jpg
+# Large Installers & System Dumps
+awscliv2.zip
+*.zip
+*.tar.gz
