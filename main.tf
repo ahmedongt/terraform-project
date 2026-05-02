@@ -71,7 +71,7 @@ resource "aws_security_group" "web_traffic" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -92,7 +92,7 @@ resource "aws_s3_bucket" "website_bucket" {
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${var.user_name}"
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version   = "2012-10-17"
     Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" } }]
   })
 }
