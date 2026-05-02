@@ -3,15 +3,19 @@ name: "Terraform CI"
 on:
   push:
     branches:
+      - master
       - main
+      - feature/docker-migration
   pull_request:
+    branches:
+      - master
+      - main
 
 jobs:
   terraform:
     name: "Terraform"
     runs-on: ubuntu-latest
     env:
-      # These refer to the Secrets you just created in GitHub Settings
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: "us-east-1"
