@@ -16,14 +16,18 @@ jobs:
     name: "Terraform"
     runs-on: ubuntu-latest
     env:
-      # AWS Credentials
+      # AWS Credentials (Stored in GitHub Secrets)
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: "us-east-1"
       
-      # Cloudflare Credentials (The TF_VAR_ prefix is the magic trick)
+      # Cloudflare Credentials (Stored in GitHub Secrets)
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+      # Public Project Variables (Hardcoded for convenience)
+      TF_VAR_domain_name: "ytthumbnail.site" # <--- REPLACE WITH YOUR ACTUAL DOMAIN
+      TF_VAR_subdomain_name: "www"         # <--- ADJUST IF NEEDED
 
     steps:
       - name: Checkout
