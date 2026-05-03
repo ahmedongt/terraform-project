@@ -1,4 +1,4 @@
-name: "Terraform CI"
+name: "Terraform CI/CD"
 
 on:
   push:
@@ -21,11 +21,11 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: "us-east-1"
       
-      # Cloudflare Credentials (Trimmed to remove accidental spaces)
+      # Cloudflare Credentials
       TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
 
-      # Public Project Variables (Hardcoded for convenience)
+      # Public Project Variables
       TF_VAR_domain_name: "ytthumbnail.site"
       TF_VAR_subdomain_name: "www"
       TF_VAR_user_name: "kali"
@@ -49,3 +49,9 @@ jobs:
 
       - name: Terraform Plan
         run: terraform plan
+
+      # --- NEW CD STEP ---
+      - name: Terraform Apply
+        # This only runs if you push to master/main, not on your feature branch
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        run: terraform apply -auto-approve
