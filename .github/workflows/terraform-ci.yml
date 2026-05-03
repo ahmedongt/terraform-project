@@ -1,0 +1,57 @@
+name: "Terraform CI/CD"
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - feature/docker-migration
+  pull_request:
+    branches:
+      - master
+      - main
+
+jobs:
+  terraform:
+    name: "Terraform"
+    runs-on: ubuntu-latest
+    env:
+      # AWS Credentials (Stored in GitHub Secrets)
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: "us-east-1"
+      
+      # Cloudflare Credentials
+      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+
+      # Public Project Variables
+      TF_VAR_domain_name: "ytthumbnail.site"
+      TF_VAR_subdomain_name: "www"
+      TF_VAR_user_name: "kali"
+      TF_VAR_instance_type: "t3.micro"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan
+
+      # --- NEW CD STEP ---
+      - name: Terraform Apply
+        # This only runs if you push to master/main, not on your feature branch
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        run: terraform apply -auto-approve

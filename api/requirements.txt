@@ -1,5 +1,4 @@
 flask
 flask-cors
-redis
 requests
-Pillow
+pillow

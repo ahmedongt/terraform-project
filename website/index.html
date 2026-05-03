@@ -52,10 +52,8 @@
     </div>
 
     <script>
-        /* CRITICAL FIX: Using an empty string for API_BASE makes the app "Location Independent".
-           It will talk to the AWS IP if you visit the IP, or the Domain if you visit the Domain.
-        */
-        const API_BASE = ""; 
+        // Use relative path to avoid Mixed Content (HTTPS/HTTP) errors
+        const API_BASE = "/api"; 
 
         async function downloadThumbnail() {
             const urlInput = document.getElementById('videoUrl').value;
@@ -73,89 +71,63 @@
             resultArea.classList.add('hidden');
 
             try {
-                // Using relative path for the API call
                 const response = await fetch(`${API_BASE}/get-thumb?url=${encodeURIComponent(urlInput)}`);
                 
                 if (!response.ok) {
-                    throw new Error(`Server Error: ${response.status}. Please check your Flask API.`);
+                    throw new Error(`Server Error: ${response.status}. Please check your API.`);
                 }
 
-                const contentType = response.headers.get("content-type");
-
-                if (contentType && contentType.includes("application/json")) {
-                    const data = await response.json();
-                    if (data.error) throw new Error(data.error);
+                const data = await response.json();
+                // Since your app.py returns 200 on success, we check if filename exists
+                if (data.filename) {
                     setupUI(data);
+                    status.innerHTML = "<span class='text-green-400'>✨ Thumbnail Ready!</span>";
                 } else {
-                    const blob = await response.blob();
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    setupUI({ view_url: blobUrl, filename: "thumbnail.jpg", is_direct_blob: true });
+                    throw new Error(data.error || "Unknown Error");
                 }
 
             } catch (error) {
-                status.innerHTML = "<span class='text-red-500'>❌ " + error.message + "</span>";
-                console.error("Fetch Error:", error);
+                status.innerHTML = `<span class='text-red-500'>❌ ${error.message}</span>`;
             } finally {
                 btn.disabled = false;
             }
         }
 
         function setupUI(data) {
-            const status = document.getElementById('status');
             const resultArea = document.getElementById('resultArea');
-            // Logic to handle relative URLs returned by Flask
-            const fullImageUrl = data.is_direct_blob ? data.view_url : `${API_BASE}${data.view_url}`;
+            const thumbPreview = document.getElementById('thumbPreview');
+            const viewBtn = document.getElementById('viewBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const deleteBtn = document.getElementById('deleteBtn');
 
-            document.getElementById('thumbPreview').src = fullImageUrl;
-            document.getElementById('viewBtn').href = fullImageUrl;
-
-            document.getElementById('downloadBtn').onclick = async () => {
-                status.innerHTML = "<i class='fas fa-cog fa-spin mr-2'></i> Saving to device...";
-                try {
-                    const imgRes = await fetch(fullImageUrl);
-                    const blob = await imgRes.blob();
-                    const blobUrl = window.URL.createObjectURL(blob);
-
-                    const link = document.createElement('a');
-                    link.href = blobUrl;
-                    link.download = data.filename || "thumbnail.jpg";
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    window.URL.revokeObjectURL(blobUrl);
-                    status.innerHTML = "<span class='text-green-400'>✅ Downloaded!</span>";
-                } catch (e) {
-                    status.innerHTML = "<span class='text-red-500'>❌ Download failed.</span>";
-                }
-            };
-
-            document.getElementById('deleteBtn').onclick = async () => {
-                if (data.is_direct_blob) {
-                    resultArea.classList.add('hidden');
-                    status.innerText = "✨ Cleaned!";
-                    return;
-                }
-                status.innerText = "🗑️ Wiping server...";
-                try {
-                    const delRes = await fetch(`${API_BASE}${data.delete_url}`);
-                    if (delRes.ok) {
-                        resultArea.classList.add('hidden');
-                        status.innerHTML = "<span class='text-green-400'>✨ Server cleaned!</span>";
-                        document.getElementById('videoUrl').value = "";
-                    }
-                } catch (e) {
-                    status.innerHTML = "<span class='text-red-500'>❌ Delete failed.</span>";
-                }
-            };
+            // Paths provided by Flask are /view/<filename> and /delete/<filename>
+            const fullImageUrl = API_BASE + data.view_url;
 
             resultArea.classList.remove('hidden');
-            status.innerHTML = "<span class='text-green-400'>✅ Success!</span>";
+            thumbPreview.src = fullImageUrl;
+            viewBtn.href = fullImageUrl;
+
+            downloadBtn.onclick = async () => {
+                const image = await fetch(fullImageUrl);
+                const imageBlog = await image.blob();
+                const imageURL = URL.createObjectURL(imageBlog);
+                const link = document.createElement('a');
+                link.href = imageURL;
+                link.download = data.filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            deleteBtn.onclick = async () => {
+                const delRes = await fetch(`${API_BASE}${data.delete_url}`);
+                if (delRes.ok) {
+                    resultArea.classList.add('hidden');
+                    document.getElementById('status').innerHTML = "<span class='text-green-400'>✨ Server cleaned!</span>";
+                    document.getElementById('videoUrl').value = "";
+                }
+            };
         }
     </script>
-
-    <style>
-        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
 </body>
 </html>
