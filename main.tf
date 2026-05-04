@@ -1,4 +1,4 @@
-# 0. THE DEFINITIONS
+# 0. THE DEFINITIONS   
 variable "cloudflare_api_token" {}
 variable "cloudflare_zone_id" {}
 variable "user_name" {}
@@ -6,6 +6,13 @@ variable "domain_name" {}
 variable "instance_type" {}
 
 terraform {
+  # THIS IS THE MEMORY (STATE) BLOCK - STOPS "ALREADYEXISTS" ERRORS
+  backend "s3" {
+    bucket = "kali-terraform-state-storage-2026" # <--- REPLACE THIS
+    key    = "state/terraform.tfstate"
+    region = "us-east-1"
+  }
+
   required_providers {
     cloudflare = {
       source  = "cloudflare/cloudflare"
@@ -45,12 +52,12 @@ resource "aws_eip" "web_eip" {
   domain   = "vpc"
 }
 
-# 2. THE FIREWALL (LOCKDOWN MODE)
+# 2. THE FIREWALL (UPDATED FOR CLOUDFLARE HTTPS)
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
-  description = "80 (Cloudflare Only), 5000 (API Only), 22 (SSH)"
+  description = "80/443 (Cloudflare Only), 5000 (API Only), 22 (SSH)"
 
-  # HTTP (Frontend Container)
+  # HTTP (Frontend)
   ingress {
     from_port   = 80
     to_port     = 80
@@ -58,7 +65,15 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # API (Backend Container)
+  # HTTPS (Cloudflare Full SSL Support)
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = local.cloudflare_ipv4
+  }
+
+  # API (Backend)
   ingress {
     from_port   = 5000
     to_port     = 5000
@@ -82,7 +97,7 @@ resource "aws_security_group" "web_traffic" {
   }
 }
 
-# 3. THE STORAGE BUCKET
+# 3. THE STORAGE BUCKET (YOUR REBUILD.PS1 USES THIS)
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${lower(var.user_name)}-12345"
   force_destroy = true
@@ -105,19 +120,12 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
-        Effect = "Allow"
-        Resource = [
-          "${aws_s3_bucket.website_bucket.arn}",
-          "${aws_s3_bucket.website_bucket.arn}/*"
-        ]
+        Action   = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
+        Effect   = "Allow"
+        Resource = ["${aws_s3_bucket.website_bucket.arn}", "${aws_s3_bucket.website_bucket.arn}/*"]
       },
       {
-        Action = [
-          "ssm:UpdateInstanceInformation",
-          "ssm:ListInstanceAssociations",
-          "ssm:PutInventory"
-        ]
+        Action   = ["ssm:UpdateInstanceInformation", "ssm:ListInstanceAssociations", "ssm:PutInventory"]
         Effect   = "Allow"
         Resource = "*"
       }
@@ -130,7 +138,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (DOCKER HOST)
+# 5. THE SERVER (DOCKER HOST WITH AUTO-DEPLOY)
 resource "aws_instance" "my_web_server" {
   ami                         = "ami-05b10e08d247fb927"
   instance_type               = var.instance_type
@@ -160,7 +168,16 @@ resource "aws_instance" "my_web_server" {
               chown -R ec2-user:ec2-user /var/www/html
               chmod -R 755 /var/www/html
 
-              echo "--- INFRASTRUCTURE READY ---"
+              echo "--- AUTO-DEPLOYING PROJECT FROM S3 ---"
+              # This line replaces your deploy.ps1 manual SSH step
+              aws s3 sync s3://kali-web-lab-${lower(var.user_name)}-12345/ /var/www/html/
+              
+              cd /var/www/html/
+              export DOCKER_BUILDKIT=0
+              export COMPOSE_DOCKER_CLI_BUILD=0
+              docker-compose up -d --build
+
+              echo "--- INFRASTRUCTURE & APP READY ---"
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
