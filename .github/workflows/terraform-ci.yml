@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. AUTHENTICATE WITH AWS (The fix for your "AlreadyExists" errors)
+      # 1. AUTHENTICATE WITH AWS
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -32,9 +32,13 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3. INITIALIZE (Now it can see your S3 state bucket)
+      # 3. INITIALIZE WITH EXPLICIT BACKEND (The critical fix)
       - name: Terraform Init
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=kali-terraform-state-storage-2026" \
+            -backend-config="key=state/terraform.tfstate" \
+            -backend-config="region=us-east-1"
 
       - name: Terraform Format Check
         run: terraform fmt -check
@@ -64,7 +68,7 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 5. SYNC PROJECT TO S3 (This moves your Docker files to the bucket)
+      # 5. SYNC PROJECT TO S3
       - name: Sync Project to S3
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
