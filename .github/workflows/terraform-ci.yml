@@ -15,29 +15,24 @@ jobs:
   terraform:
     name: "Terraform"
     runs-on: ubuntu-latest
-    env:
-      # AWS Credentials (Stored in GitHub Secrets)
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: "us-east-1"
-      
-      # Cloudflare Credentials
-      TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-
-      # Public Project Variables
-      TF_VAR_domain_name: "ytthumbnail.site"
-      TF_VAR_subdomain_name: "www"
-      TF_VAR_user_name: "kali"
-      TF_VAR_instance_type: "t3.micro"
-
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 1. AUTHENTICATE WITH AWS (The fix for your "AlreadyExists" errors)
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: "us-east-1"
+
+      # 2. SETUP TERRAFORM
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # 3. INITIALIZE (Now it can see your S3 state bucket)
       - name: Terraform Init
         run: terraform init
 
@@ -48,10 +43,29 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        run: terraform plan
+        run: terraform plan 
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_domain_name: "ytthumbnail.site"
+          TF_VAR_subdomain_name: "www"
+          TF_VAR_user_name: "kali"
+          TF_VAR_instance_type: "t3.micro"
 
-      # --- NEW CD STEP ---
+      # 4. APPLY CHANGES
       - name: Terraform Apply
-        # This only runs if you push to master/main, not on your feature branch
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: terraform apply -auto-approve
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_domain_name: "ytthumbnail.site"
+          TF_VAR_subdomain_name: "www"
+          TF_VAR_user_name: "kali"
+          TF_VAR_instance_type: "t3.micro"
+
+      # 5. SYNC PROJECT TO S3 (This moves your Docker files to the bucket)
+      - name: Sync Project to S3
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        run: |
+          aws s3 sync . s3://kali-web-lab-kali-12345/ --exclude ".git/*" --exclude ".terraform/*" --exclude "*.tfstate*"
