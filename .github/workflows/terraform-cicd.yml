@@ -77,13 +77,19 @@ jobs:
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 6. SYNC PROJECT TO S3
+      # 6. SYNC PROJECT TO S3 (Optimized to exclude clutter)
       - name: Sync Project to S3
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
-          aws s3 sync . s3://kali-web-lab-kali-12345/ --exclude ".git/*" --exclude ".terraform/*" --exclude "*.tfstate*"
+          aws s3 sync . s3://kali-web-lab-kali-12345/ \
+            --exclude ".git/*" \
+            --exclude ".terraform/*" \
+            --exclude ".github/*" \
+            --exclude "*.tf*" \
+            --exclude "*.ps1" \
+            --exclude "Extra file .txt"
 
-      # 7. REMOTE SSH DEPLOY (MANUAL BINARY INSTALL)
+      # 7. REMOTE SSH DEPLOY
       - name: Deploy to EC2 via SSH
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
@@ -97,7 +103,7 @@ jobs:
             sudo systemctl enable --now docker
             sudo usermod -aG docker ec2-user
 
-            # 2. Manually install Docker Compose Binary to user's plugin folder
+            # 2. Install Docker Compose Binary
             echo "Installing Docker Compose binary..."
             mkdir -p ~/.docker/cli-plugins/
             curl -SL https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
@@ -107,7 +113,7 @@ jobs:
             sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
             cd /var/www/html/
 
-            # 4. Deploy containers
+            # 4. Deploy containers (Added 'sudo' to solve the permission error)
             echo "Starting containers..."
-            docker compose down || true
-            docker compose up -d --build
+            sudo docker compose down || true
+            sudo docker compose up -d --build
