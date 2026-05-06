@@ -157,12 +157,16 @@ resource "aws_instance" "my_web_server" {
               systemctl enable docker
               usermod -a -G docker ec2-user
 
-              # IMPROVED DOCKER COMPOSE INSTALLATION
+              # INSTALL BUILDX (Fixes 'buildx 0.17.0 or later' error)
               mkdir -p /usr/local/lib/docker/cli-plugins
+              curl -SL https://github.com/docker/buildx/releases/latest/download/buildx-v0.17.1.linux-amd64 -o /usr/local/lib/docker/cli-plugins/docker-buildx
+              chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+
+              # INSTALL DOCKER COMPOSE
               curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
               
-              # Create symlinks so 'docker-compose' command works everywhere
+              # Create symlinks
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
@@ -171,7 +175,6 @@ resource "aws_instance" "my_web_server" {
               aws s3 sync s3://${aws_s3_bucket.website_bucket.id}/ /var/www/html/
               
               cd /var/www/html/
-              # Using the standard command now supported by our symlinks
               docker-compose up -d --build
               EOF
 
