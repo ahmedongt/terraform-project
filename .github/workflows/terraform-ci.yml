@@ -83,7 +83,7 @@ jobs:
         run: |
           aws s3 sync . s3://kali-web-lab-kali-12345/ --exclude ".git/*" --exclude ".terraform/*" --exclude "*.tfstate*"
 
-      # 7. REMOTE SSH DEPLOY (MODERN DOCKER COMPOSE FIX)
+      # 7. REMOTE SSH DEPLOY (STRICT PLUGIN LOGIC)
       - name: Deploy to EC2 via SSH
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
@@ -92,22 +92,21 @@ jobs:
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Loop to wait for the Docker Compose plugin to be ready
-            echo "Checking for Docker Compose plugin..."
-            for i in {1..20}; do
+            # 1. Wait for Docker and the Compose Plugin to be fully registered
+            echo "Waiting for Docker Compose plugin..."
+            for i in {1..30}; do
               if sudo docker compose version &> /dev/null; then
-                echo "Docker Compose detected!"
+                echo "Docker Compose is ready!"
                 break
               fi
-              echo "Waiting for background installation... ($((i*5))s)"
+              echo "Waiting... ($((i*5))s)"
               sleep 5
             done
 
-            # Sync files from S3 to the local web directory
+            # 2. Sync files from S3
             sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
             cd /var/www/html/
-            
-            # Restart using the NEW command (no hyphen)
-            sudo docker compose down --remove-orphans || true
-            export DOCKER_BUILDKIT=1
-            sudo -E docker compose up -d --build
+
+            # 3. Restart using clean plugin syntax
+            sudo docker compose down || true
+            sudo docker compose up -d --build
