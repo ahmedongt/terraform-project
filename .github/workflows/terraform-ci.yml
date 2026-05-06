@@ -84,7 +84,7 @@ jobs:
         run: |
           aws s3 sync . s3://kali-web-lab-kali-12345/ --exclude ".git/*" --exclude ".terraform/*" --exclude "*.tfstate*"
 
-      # 7. REMOTE SSH DEPLOY (FIXED DOCKER PATHS)
+      # 7. REMOTE SSH DEPLOY (ADDED WAIT-FOR-DOCKER LOGIC)
       - name: Deploy to EC2 via SSH
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
@@ -93,9 +93,22 @@ jobs:
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Loop to wait for the user_data script to finish installing docker-compose
+            echo "Checking for Docker Compose installation..."
+            for i in {1..12}; do
+              if command -v docker-compose &> /dev/null; then
+                echo "Docker Compose detected!"
+                break
+              fi
+              echo "Waiting for background installation to finish... ($((i*5))s)"
+              sleep 5
+            done
+
+            # Sync files from S3 to the local web directory
             sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
             cd /var/www/html/
-            # FIXED: Using standard 'docker-compose' command which works via the symlink we added to main.tf
+            
+            # Restart the containerized application
             sudo docker-compose down --remove-orphans || true
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
