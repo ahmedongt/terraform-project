@@ -110,15 +110,19 @@ jobs:
             sudo mkdir -p /usr/local/lib/docker/cli-plugins
             sudo curl -SL https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
             sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-            
-            # Create a symbolic link so 'docker-compose' (hyphenated) also works
             sudo ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
             # 3. Sync web files from S3
             sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
             cd /var/www/html/
 
-            # 4. Deploy using sudo to avoid session/group permission lag
+            # 4. Deploy with Forced Cleanup
             echo "Starting containers..."
-            sudo docker compose down || true
+            # --remove-orphans handles containers defined in old versions of the yaml
+            sudo docker compose down --remove-orphans || true
+            
+            # Explicitly kill the backend container if it's stuck
+            sudo docker rm -f backend || true
+            
+            # Final build and launch
             sudo docker compose up -d --build
