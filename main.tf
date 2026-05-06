@@ -153,28 +153,24 @@ resource "aws_instance" "my_web_server" {
               echo "--- INSTALLING RUNTIME ---"
               dnf update -y
               dnf install -y docker aws-cli
+              
+              # Use the official package manager for plugins to avoid CPU architecture errors
+              dnf install -y docker-buildx-plugin docker-compose-plugin
+
               systemctl start docker
               systemctl enable docker
               usermod -a -G docker ec2-user
 
-              # INSTALL BUILDX (Fixes 'buildx 0.17.0 or later' error)
-              mkdir -p /usr/local/lib/docker/cli-plugins
-              curl -SL https://github.com/docker/buildx/releases/latest/download/buildx-v0.17.1.linux-amd64 -o /usr/local/lib/docker/cli-plugins/docker-buildx
-              chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
-
-              # INSTALL DOCKER COMPOSE
-              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
-              chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-              
-              # Create symlinks
-              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
-              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
+              # Create symlinks for backward compatibility with your scripts
+              ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+              ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
               # Sync Project from S3
               mkdir -p /var/www/html
               aws s3 sync s3://${aws_s3_bucket.website_bucket.id}/ /var/www/html/
               
               cd /var/www/html/
+              export DOCKER_BUILDKIT=1
               docker-compose up -d --build
               EOF
 
