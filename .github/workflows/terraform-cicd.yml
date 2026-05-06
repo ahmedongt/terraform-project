@@ -77,7 +77,7 @@ jobs:
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 6. SYNC PROJECT TO S3 (Optimized to exclude clutter)
+      # 6. SYNC PROJECT TO S3 (Exclude clutter to keep EC2 clean)
       - name: Sync Project to S3
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
@@ -87,7 +87,9 @@ jobs:
             --exclude ".github/*" \
             --exclude "*.tf*" \
             --exclude "*.ps1" \
-            --exclude "Extra file .txt"
+            --exclude "Extra file .txt" \
+            --exclude "verify*" \
+            --exclude "check_state.json"
 
       # 7. REMOTE SSH DEPLOY
       - name: Deploy to EC2 via SSH
@@ -98,22 +100,25 @@ jobs:
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # 1. Install Docker base
+            # 1. Ensure Docker is installed and running
             sudo dnf install -y docker
             sudo systemctl enable --now docker
             sudo usermod -aG docker ec2-user
 
-            # 2. Install Docker Compose Binary
-            echo "Installing Docker Compose binary..."
-            mkdir -p ~/.docker/cli-plugins/
-            curl -SL https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
-            chmod +x ~/.docker/cli-plugins/docker-compose
+            # 2. Install Docker Compose as a GLOBAL Plugin
+            echo "Installing Docker Compose..."
+            sudo mkdir -p /usr/local/lib/docker/cli-plugins
+            sudo curl -SL https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+            sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            
+            # Create a symbolic link so 'docker-compose' (hyphenated) also works
+            sudo ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
-            # 3. Sync files from S3
+            # 3. Sync web files from S3
             sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
             cd /var/www/html/
 
-            # 4. Deploy containers (Added 'sudo' to solve the permission error)
+            # 4. Deploy using sudo to avoid session/group permission lag
             echo "Starting containers..."
             sudo docker compose down || true
             sudo docker compose up -d --build
