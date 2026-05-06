@@ -9,12 +9,12 @@ terraform {
   # THIS IS THE CLOUD MEMORY (STATE) BLOCK
   # This ensures your ThinkPad T14 and GitHub Actions share the same truth.
   backend "s3" {
-    bucket         = "kali-terraform-state-storage-2026" 
-    key            = "state/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
+    bucket  = "kali-terraform-state-storage-2026"
+    key     = "state/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
     # Safety Lock: Prevents simultaneous runs from ThinkPad and GitHub
-    dynamodb_table = "terraform-lock" 
+    dynamodb_table = "terraform-lock"
   }
 
   required_providers {
@@ -49,7 +49,7 @@ data "http" "cloudflare_ips" {
 locals {
   cloudflare_ipv4 = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
   # Normalize user_name for S3 bucket naming compatibility
-  safe_user_name  = lower(replace(var.user_name, " ", "-"))
+  safe_user_name = lower(replace(var.user_name, " ", "-"))
 }
 
 # 1. THE PERMANENT IP (ELASTIC IP)
@@ -92,7 +92,7 @@ resource "aws_security_group" "web_traffic" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] 
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
