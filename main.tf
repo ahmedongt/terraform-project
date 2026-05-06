@@ -1,4 +1,4 @@
-# 0. THE DEFINITIONS   
+# 0. THE DEFINITIONS      
 variable "cloudflare_api_token" {}
 variable "cloudflare_zone_id" {}
 variable "user_name" {}
@@ -6,11 +6,15 @@ variable "domain_name" {}
 variable "instance_type" {}
 
 terraform {
-  # THIS IS THE MEMORY (STATE) BLOCK - STOPS "ALREADYEXISTS" ERRORS
+  # THIS IS THE CLOUD MEMORY (STATE) BLOCK
+  # This ensures your ThinkPad T14 and GitHub Actions share the same truth.
   backend "s3" {
-    bucket = "kali-terraform-state-storage-2026" # <--- REPLACE THIS
-    key    = "state/terraform.tfstate"
-    region = "us-east-1"
+    bucket         = "kali-terraform-state-storage-2026" 
+    key            = "state/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    # Safety Lock: Prevents simultaneous runs from ThinkPad and GitHub
+    dynamodb_table = "terraform-lock" 
   }
 
   required_providers {
@@ -44,6 +48,8 @@ data "http" "cloudflare_ips" {
 
 locals {
   cloudflare_ipv4 = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
+  # Normalize user_name for S3 bucket naming compatibility
+  safe_user_name  = lower(replace(var.user_name, " ", "-"))
 }
 
 # 1. THE PERMANENT IP (ELASTIC IP)
@@ -52,12 +58,12 @@ resource "aws_eip" "web_eip" {
   domain   = "vpc"
 }
 
-# 2. THE FIREWALL (UPDATED FOR CLOUDFLARE HTTPS)
+# 2. THE FIREWALL (DOCKER & CLOUDFLARE OPTIMIZED)
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
-  description = "80/443 (Cloudflare Only), 5000 (API Only), 22 (SSH)"
+  description = "80/443 (Cloudflare), 5000 (API), 22 (SSH)"
 
-  # HTTP (Frontend)
+  # HTTP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -65,7 +71,7 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # HTTPS (Cloudflare Full SSL Support)
+  # HTTPS
   ingress {
     from_port   = 443
     to_port     = 443
@@ -81,12 +87,12 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # SSH (Your IP)
+  # SSH (Set to your specific IP for better security later)
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] 
   }
 
   egress {
@@ -97,15 +103,15 @@ resource "aws_security_group" "web_traffic" {
   }
 }
 
-# 3. THE STORAGE BUCKET (YOUR REBUILD.PS1 USES THIS)
+# 3. THE STORAGE BUCKET (Used by CI/CD to store your Docker code)
 resource "aws_s3_bucket" "website_bucket" {
-  bucket        = "kali-web-lab-${lower(var.user_name)}-12345"
+  bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# 4. THE IDENTITY CARD (IAM)
+# 4. THE IDENTITY CARD (IAM) - Allows EC2 to pull from S3
 resource "aws_iam_role" "web_admin_role" {
-  name = "web_admin_role_${var.user_name}"
+  name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" } }]
@@ -134,11 +140,11 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
 }
 
 resource "aws_iam_instance_profile" "web_instance_profile" {
-  name = "web_instance_profile_${var.user_name}"
+  name = "web_instance_profile_${local.safe_user_name}"
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (DOCKER HOST WITH AUTO-DEPLOY)
+# 5. THE SERVER (AUTO-BOOTSTRAPPER)
 resource "aws_instance" "my_web_server" {
   ami                         = "ami-05b10e08d247fb927"
   instance_type               = var.instance_type
@@ -151,33 +157,24 @@ resource "aws_instance" "my_web_server" {
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-              echo "--- BOOTSTRAPPING DOCKER & COMPOSE ---"
+              echo "--- INSTALLING RUNTIME ---"
               dnf update -y
               dnf install -y docker aws-cli
               systemctl start docker
               systemctl enable docker
               usermod -a -G docker ec2-user
 
-              # Install Docker Compose Standalone
+              # Install Docker Compose
               curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
               chmod +x /usr/local/bin/docker-compose
               ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
 
-              # Setup project directory
+              # Sync Project from S3 (This is where CI/CD pushes your code)
               mkdir -p /var/www/html
-              chown -R ec2-user:ec2-user /var/www/html
-              chmod -R 755 /var/www/html
-
-              echo "--- AUTO-DEPLOYING PROJECT FROM S3 ---"
-              # This line replaces your deploy.ps1 manual SSH step
-              aws s3 sync s3://kali-web-lab-${lower(var.user_name)}-12345/ /var/www/html/
+              aws s3 sync s3://${aws_s3_bucket.website_bucket.id}/ /var/www/html/
               
               cd /var/www/html/
-              export DOCKER_BUILDKIT=0
-              export COMPOSE_DOCKER_CLI_BUILD=0
               docker-compose up -d --build
-
-              echo "--- INFRASTRUCTURE & APP READY ---"
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
