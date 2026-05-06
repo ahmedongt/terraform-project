@@ -7,13 +7,11 @@ variable "instance_type" {}
 
 terraform {
   # THIS IS THE CLOUD MEMORY (STATE) BLOCK
-  # This ensures your ThinkPad T14 and GitHub Actions share the same truth.
   backend "s3" {
-    bucket  = "kali-terraform-state-storage-2026"
-    key     = "state/terraform.tfstate"
-    region  = "us-east-1"
-    encrypt = true
-    # Safety Lock: Prevents simultaneous runs from ThinkPad and GitHub
+    bucket         = "kali-terraform-state-storage-2026"
+    key            = "state/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
     dynamodb_table = "terraform-lock"
   }
 
@@ -48,8 +46,7 @@ data "http" "cloudflare_ips" {
 
 locals {
   cloudflare_ipv4 = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
-  # Normalize user_name for S3 bucket naming compatibility
-  safe_user_name = lower(replace(var.user_name, " ", "-"))
+  safe_user_name  = lower(replace(var.user_name, " ", "-"))
 }
 
 # 1. THE PERMANENT IP (ELASTIC IP)
@@ -58,12 +55,11 @@ resource "aws_eip" "web_eip" {
   domain   = "vpc"
 }
 
-# 2. THE FIREWALL (DOCKER & CLOUDFLARE OPTIMIZED)
+# 2. THE FIREWALL
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
   description = "80/443 (Cloudflare), 5000 (API), 22 (SSH)"
 
-  # HTTP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -71,7 +67,6 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # HTTPS
   ingress {
     from_port   = 443
     to_port     = 443
@@ -79,7 +74,6 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # API (Backend)
   ingress {
     from_port   = 5000
     to_port     = 5000
@@ -87,7 +81,6 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # SSH (Set to your specific IP for better security later)
   ingress {
     from_port   = 22
     to_port     = 22
@@ -103,13 +96,13 @@ resource "aws_security_group" "web_traffic" {
   }
 }
 
-# 3. THE STORAGE BUCKET (Used by CI/CD to store your Docker code)
+# 3. THE STORAGE BUCKET
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# 4. THE IDENTITY CARD (IAM) - Allows EC2 to pull from S3
+# 4. THE IDENTITY CARD (IAM)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -164,16 +157,21 @@ resource "aws_instance" "my_web_server" {
               systemctl enable docker
               usermod -a -G docker ec2-user
 
-              # Install Docker Compose
-              curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-              chmod +x /usr/local/bin/docker-compose
-              ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+              # IMPROVED DOCKER COMPOSE INSTALLATION
+              mkdir -p /usr/local/lib/docker/cli-plugins
+              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+              chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+              
+              # Create symlinks so 'docker-compose' command works everywhere
+              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
-              # Sync Project from S3 (This is where CI/CD pushes your code)
+              # Sync Project from S3
               mkdir -p /var/www/html
               aws s3 sync s3://${aws_s3_bucket.website_bucket.id}/ /var/www/html/
               
               cd /var/www/html/
+              # Using the standard command now supported by our symlinks
               docker-compose up -d --build
               EOF
 

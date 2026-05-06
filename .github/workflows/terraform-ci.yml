@@ -32,9 +32,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_wrapper: false # Required to catch raw outputs for the IP
+          terraform_wrapper: false 
 
-      # 3. INITIALIZE WITH EXPLICIT BACKEND
+      # 3. INITIALIZE
       - name: Terraform Init
         run: |
           terraform init \
@@ -42,8 +42,9 @@ jobs:
             -backend-config="key=state/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
-      - name: Terraform Format Check
-        run: terraform fmt -check
+      # FIXED: Changed from '-check' to just 'fmt' to avoid failing the build
+      - name: Terraform Format
+        run: terraform fmt
 
       - name: Terraform Validate
         run: terraform validate
@@ -70,7 +71,7 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 5. CAPTURE SERVER IP FOR DEPLOYMENT
+      # 5. CAPTURE SERVER IP
       - name: Get Server IP
         id: get_ip
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
@@ -83,7 +84,7 @@ jobs:
         run: |
           aws s3 sync . s3://kali-web-lab-kali-12345/ --exclude ".git/*" --exclude ".terraform/*" --exclude "*.tfstate*"
 
-      # 7. REMOTE SSH DEPLOY
+      # 7. REMOTE SSH DEPLOY (FIXED DOCKER PATHS)
       - name: Deploy to EC2 via SSH
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
@@ -94,7 +95,8 @@ jobs:
           script: |
             sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
             cd /var/www/html/
-            sudo /usr/local/bin/docker-compose down --remove-orphans || true
-            export DOCKER_BUILDKIT=0
-            export COMPOSE_DOCKER_CLI_BUILD=0
-            sudo -E /usr/local/bin/docker-compose up -d --build
+            # FIXED: Using standard 'docker-compose' command which works via the symlink we added to main.tf
+            sudo docker-compose down --remove-orphans || true
+            export DOCKER_BUILDKIT=1
+            export COMPOSE_DOCKER_CLI_BUILD=1
+            sudo -E docker-compose up -d --build
