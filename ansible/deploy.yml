@@ -33,28 +33,25 @@
         state: started
         enabled: yes
 
-    - name: Install Docker Compose and Buildx Binaries
-      shell: |
-        # Use Ansible variables to determine architecture
-        ARCH="{{ ansible_architecture }}"
-        if [ "$ARCH" = "x86_64" ]; then 
-          COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64"
-          BUILDX_URL="https://github.com/docker/buildx/releases/latest/download/buildx-v0.17.1.linux-amd64"
-        else
-          COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64"
-          BUILDX_URL="https://github.com/docker/buildx/releases/latest/download/buildx-v0.17.1.linux-arm64"
-        fi
+    - name: Create Docker CLI plugins directory
+      file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: '0755'
 
-        mkdir -p /usr/local/lib/docker/cli-plugins
-        
-        # Download and force overwrite to ensure no corrupted files remain
-        curl -SL "$COMPOSE_URL" -o /usr/local/lib/docker/cli-plugins/docker-compose
-        curl -SL "$BUILDX_URL" -o /usr/local/lib/docker/cli-plugins/docker-buildx
-        
-        # Set permissions
-        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-        chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
-      register: bin_install
+    - name: Download Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_architecture }}"
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: '0755'
+        force: yes
+
+    - name: Download Docker Buildx
+      get_url:
+        url: "https://github.com/docker/buildx/releases/latest/download/buildx-v0.17.1.linux-{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
+        dest: /usr/local/lib/docker/cli-plugins/docker-buildx
+        mode: '0755'
+        force: yes
 
     - name: Force remove any conflicting containers
       shell: "docker rm -f backend frontend || true"
