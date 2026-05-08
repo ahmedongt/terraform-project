@@ -12,15 +12,16 @@
 
     - name: Copy project files to EC2
       copy:
-        # Reaches up to the root to grab only what is needed
+        # Removing the trailing slash from folders below ensures the 
+        # actual directory is created, not just its contents.
         src: "../{{ item }}"
         dest: /home/ec2-user/terraform-project/
         owner: ec2-user
         group: ec2-user
       loop:
         - docker-compose.yml
-        - api/
-        - website/
+        - api
+        - website
 
     - name: Ensure Docker is installed
       dnf:
