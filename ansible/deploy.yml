@@ -41,14 +41,15 @@
 
     - name: Download Docker Compose
       get_url:
-        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_architecture }}"
+        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_facts['architecture'] }}"
         dest: /usr/local/lib/docker/cli-plugins/docker-compose
         mode: '0755'
         force: yes
 
     - name: Download Docker Buildx
       get_url:
-        url: "https://github.com/docker/buildx/releases/latest/download/buildx-v0.17.1.linux-{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}"
+        # Fixed the URL naming convention and the deprecation warning format
+        url: "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"
         dest: /usr/local/lib/docker/cli-plugins/docker-buildx
         mode: '0755'
         force: yes
