@@ -13,7 +13,7 @@ on:
 
 jobs:
   terraform:
-    name: "Terraform"
+    name: "Terraform & Ansible Deploy"
     runs-on: ubuntu-latest
     
     steps:
@@ -77,52 +77,23 @@ jobs:
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 6. SYNC PROJECT TO S3 (Exclude clutter to keep EC2 clean)
-      - name: Sync Project to S3
+      # 6. SETUP SSH AGENT (For Ansible)
+      - name: Setup SSH Agent
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        run: |
-          aws s3 sync . s3://kali-web-lab-kali-12345/ \
-            --exclude ".git/*" \
-            --exclude ".terraform/*" \
-            --exclude ".github/*" \
-            --exclude "*.tf*" \
-            --exclude "*.ps1" \
-            --exclude "Extra file .txt" \
-            --exclude "verify*" \
-            --exclude "check_state.json"
-
-      # 7. REMOTE SSH DEPLOY
-      - name: Deploy to EC2 via SSH
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        uses: appleboy/ssh-action@v1.0.3
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ steps.get_ip.outputs.SERVER_IP }}
-          username: ec2-user
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            # 1. Ensure Docker is installed and running
-            sudo dnf install -y docker
-            sudo systemctl enable --now docker
-            sudo usermod -aG docker ec2-user
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-            # 2. Install Docker Compose as a GLOBAL Plugin
-            echo "Installing Docker Compose..."
-            sudo mkdir -p /usr/local/lib/docker/cli-plugins
-            sudo curl -SL https://github.com/docker/compose/releases/download/v2.26.1/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
-            sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-            sudo ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
-
-            # 3. Sync web files from S3
-            sudo aws s3 sync s3://kali-web-lab-kali-12345/ /var/www/html/ --delete
-            cd /var/www/html/
-
-            # 4. Deploy with Forced Cleanup
-            echo "Starting containers..."
-            # --remove-orphans handles containers defined in old versions of the yaml
-            sudo docker compose down --remove-orphans || true
-            
-            # Explicitly kill the backend container if it's stuck
-            sudo docker rm -f backend || true
-            
-            # Final build and launch
-            sudo docker compose up -d --build
+      # 7. RUN ANSIBLE DEPLOYMENT
+      - name: Run Ansible Playbook
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: False
+        run: |
+          # Install the docker community collection needed for your playbook
+          ansible-galaxy collection install community.docker
+          
+          # Run the playbook using the IP captured in Step 5
+          # We pass the server_ip dynamically to Ansible
+          ansible-playbook -i "${{ steps.get_ip.outputs.SERVER_IP }}," ansible/deploy.yml \
+            -e "ansible_user=ec2-user"

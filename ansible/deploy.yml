@@ -1,0 +1,42 @@
+---
+- name: Deploy YT Thumbnail App
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure project directory exists on EC2
+      file:
+        path: /home/ec2-user/terraform-project
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+
+    - name: Copy project files to EC2
+      copy:
+        src: ../
+        dest: /home/ec2-user/terraform-project/
+        owner: ec2-user
+        group: ec2-user
+        # Exclude local terraform state and keys to keep the server clean
+        exclude_caching: yes 
+
+    - name: Ensure Docker and Docker Compose are installed
+      dnf:
+        name: 
+          - docker
+        state: present
+
+    - name: Ensure Docker Service is started
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Force remove any conflicting containers
+      shell: "docker rm -f backend frontend || true"
+
+    - name: Deploy fresh containers
+      community.docker.docker_compose_v2:
+        project_src: /home/ec2-user/terraform-project
+        state: present
+        build: always
+        recreate: always
