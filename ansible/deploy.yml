@@ -12,12 +12,17 @@
 
     - name: Copy project files to EC2
       copy:
-        src: ../
+        # Reaches up to the root to grab only what is needed
+        src: "../{{ item }}"
         dest: /home/ec2-user/terraform-project/
         owner: ec2-user
         group: ec2-user
+      loop:
+        - docker-compose.yml
+        - api/
+        - website/
 
-    - name: Ensure Docker and Docker Compose are installed
+    - name: Ensure Docker is installed
       dnf:
         name: 
           - docker
