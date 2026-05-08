@@ -22,18 +22,21 @@
         - website
         - default.conf
 
-    - name: Ensure Docker and Compose Plugin are installed
-      dnf:
-        name: 
-          - docker
-          - docker-compose-plugin
-        state: present
+    - name: Install Docker and Compose
+      shell: |
+        dnf install -y docker
+        systemctl start docker
+        systemctl enable docker
+        mkdir -p /usr/local/lib/docker/cli-plugins
+        curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+      register: install_result
+      # This 'register' stores the exit code and output in a variable
 
-    - name: Ensure Docker Service is started
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
+    - name: Show exit code of installation for debugging
+      debug:
+        msg: "The installation finished with exit code {{ install_result.rc }}"
+        # In Ansible, .rc is the same as 'echo $?'
 
     - name: Force remove any conflicting containers
       shell: "docker rm -f backend frontend || true"
