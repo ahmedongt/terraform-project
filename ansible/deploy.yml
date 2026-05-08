@@ -20,12 +20,13 @@
         - docker-compose.yml
         - api
         - website
-        - default.conf  # Added this to fix the Nginx mount error
+        - default.conf
 
-    - name: Ensure Docker is installed
+    - name: Ensure Docker and Compose Plugin are installed
       dnf:
         name: 
           - docker
+          - docker-compose-plugin
         state: present
 
     - name: Ensure Docker Service is started
