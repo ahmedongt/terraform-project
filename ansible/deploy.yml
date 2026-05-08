@@ -16,8 +16,6 @@
         dest: /home/ec2-user/terraform-project/
         owner: ec2-user
         group: ec2-user
-        # Exclude local terraform state and keys to keep the server clean
-        exclude_caching: yes 
 
     - name: Ensure Docker and Docker Compose are installed
       dnf:
