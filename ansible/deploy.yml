@@ -12,8 +12,6 @@
 
     - name: Copy project files to EC2
       copy:
-        # Removing the trailing slash from folders below ensures the 
-        # actual directory is created, not just its contents.
         src: "../{{ item }}"
         dest: /home/ec2-user/terraform-project/
         owner: ec2-user
@@ -22,6 +20,7 @@
         - docker-compose.yml
         - api
         - website
+        - default.conf  # Added this to fix the Nginx mount error
 
     - name: Ensure Docker is installed
       dnf:
