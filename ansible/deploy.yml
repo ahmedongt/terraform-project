@@ -10,15 +10,28 @@
         owner: ec2-user
         group: ec2-user
 
+    # --- DATA PERMISSIONS START ---
+    - name: Create persistent data directories with fixed IDs
+      file:
+        path: "/home/ec2-user/terraform-project/data/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.owner }}"
+        mode: '0755'
+      loop:
+        - { path: 'grafana', owner: '472' }      # Grafana fixed ID
+        - { path: 'prometheus', owner: '65534' } # Prometheus fixed ID
+    # --- DATA PERMISSIONS END ---
+
     # --- PERMANENT FIX START ---
     - name: Check if prometheus.yml is accidentally a directory
       stat:
-        path: /home/ec2-user/terraform-project/prometheus.yml
+        path: "/home/ec2-user/terraform-project/prometheus.yml"
       register: prom_path
 
     - name: Remove accidental prometheus directory if it exists
       file:
-        path: /home/ec2-user/terraform-project/prometheus.yml
+        path: "/home/ec2-user/terraform-project/prometheus.yml"
         state: absent
       when: prom_path.stat.isdir is defined and prom_path.stat.isdir
     # --- PERMANENT FIX END ---
