@@ -1,8 +1,101 @@
-# 1. Stage the fixes
-git add .
+---
+- name: Deploy YT Thumbnail App with Monitoring
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure project directory exists on EC2
+      file:
+        path: /home/ec2-user/terraform-project
+        state: directory
+        owner: ec2-user
+        group: ec2-user
 
-# 2. Commit the recursive permission logic
-git commit -m "Fix: Recursive permissions for D-Drive backup access"
+    # --- DATA PERMISSIONS START ---
+    - name: Create persistent data directories
+      file:
+        path: "/home/ec2-user/terraform-project/data/{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: ec2-user
+        mode: '0775'
+      loop:
+        - path: grafana
+          owner: '472'
+        - path: prometheus
+          owner: '65534'
 
-# 3. Push to your master branch
-git push origin master
+    - name: Force recursive group permissions for backups
+      file:
+        path: "/home/ec2-user/terraform-project/data"
+        state: directory
+        group: ec2-user
+        recurse: yes
+        mode: 'g+rX'
+    # --- DATA PERMISSIONS END ---
+
+    # --- PERMANENT FIX START ---
+    - name: Check if prometheus.yml is accidentally a directory
+      stat:
+        path: "/home/ec2-user/terraform-project/prometheus.yml"
+      register: prom_path
+
+    - name: Remove accidental prometheus directory if it exists
+      file:
+        path: "/home/ec2-user/terraform-project/prometheus.yml"
+        state: absent
+      when: prom_path.stat.isdir is defined and prom_path.stat.isdir
+    # --- PERMANENT FIX END ---
+
+    - name: Copy project files to EC2
+      copy:
+        src: "../{{ item }}"
+        dest: /home/ec2-user/terraform-project/
+        owner: ec2-user
+        group: ec2-user
+      loop:
+        - docker-compose.yml
+        - api
+        - website
+        - default.conf
+        - prometheus.yml
+
+    - name: Install Docker Engine
+      dnf:
+        name: docker
+        state: present
+
+    - name: Ensure Docker Service is started
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Create Docker CLI plugins directory
+      file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_facts['architecture'] }}"
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: '0755'
+        force: yes
+
+    - name: Download Docker Buildx
+      get_url:
+        url: "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"
+        dest: /usr/local/lib/docker/cli-plugins/docker-buildx
+        mode: '0755'
+        force: yes
+
+    - name: Force remove any conflicting containers
+      shell: "docker rm -f backend frontend prometheus grafana || true"
+
+    - name: Deploy fresh containers
+      community.docker.docker_compose_v2:
+        project_src: /home/ec2-user/terraform-project
+        state: present
+        build: always
+        recreate: always
