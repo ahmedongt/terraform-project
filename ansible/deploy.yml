@@ -10,14 +10,14 @@
         owner: ec2-user
         group: ec2-user
 
-    # --- DATA PERMISSIONS START ---
+    # --- DATA PERMISSIONS UPDATED FOR BACKUP ACCESS ---
     - name: Create persistent data directories with fixed IDs
       file:
         path: "/home/ec2-user/terraform-project/data/{{ item.path }}"
         state: directory
         owner: "{{ item.owner }}"
-        group: "{{ item.owner }}"
-        mode: '0755'
+        group: ec2-user    # Allow ec2-user to access these for backups
+        mode: '0775'       # Permissions: rwxrwxr-x
       loop:
         - { path: 'grafana', owner: '472' }      # Grafana fixed ID
         - { path: 'prometheus', owner: '65534' } # Prometheus fixed ID
