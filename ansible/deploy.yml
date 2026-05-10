@@ -10,6 +10,19 @@
         owner: ec2-user
         group: ec2-user
 
+    # --- PERMANENT FIX START ---
+    - name: Check if prometheus.yml is accidentally a directory
+      stat:
+        path: /home/ec2-user/terraform-project/prometheus.yml
+      register: prom_path
+
+    - name: Remove accidental prometheus directory if it exists
+      file:
+        path: /home/ec2-user/terraform-project/prometheus.yml
+        state: absent
+      when: prom_path.stat.isdir is defined and prom_path.stat.isdir
+    # --- PERMANENT FIX END ---
+
     - name: Copy project files to EC2
       copy:
         src: "../{{ item }}"
@@ -21,7 +34,7 @@
         - api
         - website
         - default.conf
-        - prometheus.yml  # <--- Added to loop
+        - prometheus.yml
 
     - name: Install Docker Engine
       dnf:
@@ -55,7 +68,6 @@
         force: yes
 
     - name: Force remove any conflicting containers
-      # Added prometheus and grafana to the cleanup list
       shell: "docker rm -f backend frontend prometheus grafana || true"
 
     - name: Deploy fresh containers
