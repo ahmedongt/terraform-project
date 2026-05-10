@@ -1,5 +1,5 @@
 ---
-- name: Deploy YT Thumbnail App
+- name: Deploy YT Thumbnail App with Monitoring
   hosts: all
   become: yes
   tasks:
@@ -21,6 +21,7 @@
         - api
         - website
         - default.conf
+        - prometheus.yml  # <--- Added to loop
 
     - name: Install Docker Engine
       dnf:
@@ -48,14 +49,14 @@
 
     - name: Download Docker Buildx
       get_url:
-        # Fixed the URL naming convention and the deprecation warning format
         url: "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"
         dest: /usr/local/lib/docker/cli-plugins/docker-buildx
         mode: '0755'
         force: yes
 
     - name: Force remove any conflicting containers
-      shell: "docker rm -f backend frontend || true"
+      # Added prometheus and grafana to the cleanup list
+      shell: "docker rm -f backend frontend prometheus grafana || true"
 
     - name: Deploy fresh containers
       community.docker.docker_compose_v2:
