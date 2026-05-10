@@ -6,7 +6,6 @@ variable "domain_name" {}
 variable "instance_type" {}
 
 terraform {
-  # THIS IS THE CLOUD MEMORY (STATE) BLOCK
   backend "s3" {
     bucket         = "kali-terraform-state-storage-2026"
     key            = "state/terraform.tfstate"
@@ -55,11 +54,12 @@ resource "aws_eip" "web_eip" {
   domain   = "vpc"
 }
 
-# 2. THE FIREWALL
+# 2. THE FIREWALL (HARDENED)
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
-  description = "80/443 (Cloudflare), 5000 (API), 22 (SSH)"
+  description = "80/443 (Cloudflare), 5000 (API), 22 (SSH ONLY)"
 
+  # HTTP/HTTPS: Only accessible through Cloudflare
   ingress {
     from_port   = 80
     to_port     = 80
@@ -74,6 +74,7 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
+  # API Access: Only accessible through Cloudflare
   ingress {
     from_port   = 5000
     to_port     = 5000
@@ -81,12 +82,16 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
+  # SSH Access: REQUIRED for Tunneling to Grafana/Prometheus
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Change to your Home IP/32 for max security
   }
+
+  # NOTE: Ports 3000 and 9090 are NOT listed here. 
+  # They are closed to the public and only accessible via SSH Tunnel.
 
   egress {
     from_port   = 0
@@ -137,7 +142,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (AUTO-BOOTSTRAPPER)
+# 5. THE SERVER
 resource "aws_instance" "my_web_server" {
   ami                         = "ami-05b10e08d247fb927"
   instance_type               = var.instance_type
@@ -149,26 +154,16 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-
-              echo "--- INSTALLING RUNTIME ---"
               dnf update -y
               dnf install -y docker aws-cli
-              
-              # Use the official package manager for plugins to avoid CPU architecture errors
               dnf install -y docker-buildx-plugin docker-compose-plugin
-
               systemctl start docker
               systemctl enable docker
               usermod -a -G docker ec2-user
-
-              # Create symlinks for backward compatibility with your scripts
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
-
-              # Sync Project from S3
               mkdir -p /var/www/html
               aws s3 sync s3://${aws_s3_bucket.website_bucket.id}/ /var/www/html/
-              
               cd /var/www/html/
               export DOCKER_BUILDKIT=1
               docker-compose up -d --build
