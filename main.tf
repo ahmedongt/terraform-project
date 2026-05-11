@@ -59,7 +59,6 @@ resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
   description = "80/443 (Cloudflare), 5000 (API), 22 (SSH ONLY)"
 
-  # HTTP/HTTPS: Only accessible through Cloudflare
   ingress {
     from_port   = 80
     to_port     = 80
@@ -74,7 +73,6 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # API Access: Only accessible through Cloudflare
   ingress {
     from_port   = 5000
     to_port     = 5000
@@ -82,16 +80,12 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  # SSH Access: REQUIRED for Tunneling to Grafana/Prometheus
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Change to your Home IP/32 for max security
+    cidr_blocks = ["0.0.0.0/0"]
   }
-
-  # NOTE: Ports 3000 and 9090 are NOT listed here. 
-  # They are closed to the public and only accessible via SSH Tunnel.
 
   egress {
     from_port   = 0
@@ -101,10 +95,17 @@ resource "aws_security_group" "web_traffic" {
   }
 }
 
-# 3. THE STORAGE BUCKET
+# 3. THE STORAGE BUCKETS
+# Bucket for the Website Frontend
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
+}
+
+# PERMANENT Bucket for Monitoring State (Configs & Stats)
+resource "aws_s3_bucket" "monitoring_vault" {
+  bucket        = "monitoring-configs-and-stats-${local.safe_user_name}"
+  force_destroy = false # Important: We do NOT want to lose this data easily
 }
 
 # 4. THE IDENTITY CARD (IAM)
@@ -124,9 +125,15 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Access to BOTH buckets
         Action   = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
         Effect   = "Allow"
-        Resource = ["${aws_s3_bucket.website_bucket.arn}", "${aws_s3_bucket.website_bucket.arn}/*"]
+        Resource = [
+          "${aws_s3_bucket.website_bucket.arn}", 
+          "${aws_s3_bucket.website_bucket.arn}/*",
+          "${aws_s3_bucket.monitoring_vault.arn}",
+          "${aws_s3_bucket.monitoring_vault.arn}/*"
+        ]
       },
       {
         Action   = ["ssm:UpdateInstanceInformation", "ssm:ListInstanceAssociations", "ssm:PutInventory"]
@@ -163,10 +170,6 @@ resource "aws_instance" "my_web_server" {
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               mkdir -p /var/www/html
-              aws s3 sync s3://${aws_s3_bucket.website_bucket.id}/ /var/www/html/
-              cd /var/www/html/
-              export DOCKER_BUILDKIT=1
-              docker-compose up -d --build
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
@@ -190,6 +193,10 @@ resource "cloudflare_record" "www_dns" {
 }
 
 # 7. OUTPUTS
+output "monitoring_bucket_name" {
+  value = aws_s3_bucket.monitoring_vault.id
+}
+
 output "website_url" {
   value = "https://${var.domain_name}"
 }
