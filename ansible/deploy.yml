@@ -10,6 +10,15 @@
         owner: ec2-user
         group: ec2-user
 
+    # --- NEW: S3 BOOTSTRAP START ---
+    - name: Install S3 dependencies (boto3) on EC2
+      ansible.builtin.pip:
+        name: 
+          - boto3
+          - botocore
+        executable: pip3
+    # --- NEW: S3 BOOTSTRAP END ---
+
     # --- S3 RESTORE START ---
     - name: Check if monitoring state exists in S3
       amazon.aws.s3_object:
@@ -86,6 +95,10 @@
         - website
         - default.conf
         - prometheus.yml
+
+    # --- DNF CACHE CLEAN FIX ---
+    - name: Clean DNF cache to prevent RPM errors
+      command: dnf clean all
 
     - name: Install Docker Engine
       dnf:
