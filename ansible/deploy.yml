@@ -10,6 +10,34 @@
         owner: ec2-user
         group: ec2-user
 
+    # --- S3 RESTORE START ---
+    - name: Check if monitoring state exists in S3
+      amazon.aws.s3_object:
+        bucket: monitoring-configs-and-stats-kali
+        object: monitoring_state.tar.gz
+        mode: geturl
+      register: s3_check
+      ignore_errors: yes
+
+    - name: Download and Extract State from S3
+      block:
+        - name: Download state from S3 vault
+          amazon.aws.s3_object:
+            bucket: monitoring-configs-and-stats-kali
+            object: monitoring_state.tar.gz
+            dest: /home/ec2-user/terraform-project/monitoring_state.tar.gz
+            mode: get
+
+        - name: Extract monitoring state (Restore Brain)
+          ansible.builtin.unarchive:
+            src: /home/ec2-user/terraform-project/monitoring_state.tar.gz
+            dest: /home/ec2-user/terraform-project/
+            remote_src: yes
+            owner: ec2-user
+            group: ec2-user
+      when: s3_check is succeeded
+    # --- S3 RESTORE END ---
+
     # --- DATA PERMISSIONS START ---
     - name: Create persistent data directories
       file:
