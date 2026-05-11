@@ -11,7 +11,7 @@ terraform {
     key            = "state/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "terraform-lock"
+    use_lockfile   = true # Fixed deprecated parameter
   }
 
   required_providers {
@@ -46,6 +46,8 @@ data "http" "cloudflare_ips" {
 locals {
   cloudflare_ipv4 = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
   safe_user_name  = lower(replace(var.user_name, " ", "-"))
+  # Define the bucket name once here for easy reference
+  monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
 # 1. THE PERMANENT IP (ELASTIC IP)
@@ -96,17 +98,14 @@ resource "aws_security_group" "web_traffic" {
 }
 
 # 3. THE STORAGE BUCKETS
-# Bucket for the Website Frontend
+# Bucket for the Website Frontend (This remains disposable)
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# PERMANENT Bucket for Monitoring State (Configs & Stats)
-resource "aws_s3_bucket" "monitoring_vault" {
-  bucket        = "monitoring-configs-and-stats-${local.safe_user_name}"
-  force_destroy = false # Important: We do NOT want to lose this data easily
-}
+# NOTE: The Monitoring Vault bucket resource has been removed from here. 
+# It is now a PERMANENT resource managed outside of this lifecycle.
 
 # 4. THE IDENTITY CARD (IAM)
 resource "aws_iam_role" "web_admin_role" {
@@ -125,14 +124,14 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Access to BOTH buckets
+        # Access to BOTH buckets (Hardcoded monitoring bucket name)
         Action   = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
         Effect   = "Allow"
         Resource = [
           "${aws_s3_bucket.website_bucket.arn}", 
           "${aws_s3_bucket.website_bucket.arn}/*",
-          "${aws_s3_bucket.monitoring_vault.arn}",
-          "${aws_s3_bucket.monitoring_vault.arn}/*"
+          "arn:aws:s3:::${local.monitoring_bucket}",
+          "arn:aws:s3:::${local.monitoring_bucket}/*"
         ]
       },
       {
@@ -194,7 +193,7 @@ resource "cloudflare_record" "www_dns" {
 
 # 7. OUTPUTS
 output "monitoring_bucket_name" {
-  value = aws_s3_bucket.monitoring_vault.id
+  value = local.monitoring_bucket
 }
 
 output "website_url" {
