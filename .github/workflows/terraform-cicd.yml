@@ -17,10 +17,20 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      # 1. CHECKOUT CODE (With full history for SonarCloud)
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 1. AUTHENTICATE WITH AWS
+      # 2. SONARCLOUD SCAN (The Quality Gate)
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # 3. AUTHENTICATE WITH AWS
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -28,13 +38,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # 2. SETUP TERRAFORM
+      # 4. SETUP TERRAFORM
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
 
-      # 3. INITIALIZE
+      # 5. INITIALIZE
       - name: Terraform Init
         run: |
           terraform init \
@@ -58,7 +68,7 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 4. APPLY CHANGES
+      # 6. APPLY CHANGES
       - name: Terraform Apply
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: terraform apply -auto-approve
@@ -70,30 +80,29 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 5. CAPTURE SERVER IP
+      # 7. CAPTURE SERVER IP
       - name: Get Server IP
         id: get_ip
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 6. SETUP SSH AGENT (For Ansible)
+      # 8. SETUP SSH AGENT (For Ansible)
       - name: Setup SSH Agent
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      # 7. RUN ANSIBLE DEPLOYMENT
+      # 9. RUN ANSIBLE DEPLOYMENT
       - name: Run Ansible Playbook
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         env:
           ANSIBLE_HOST_KEY_CHECKING: False
         run: |
-          # Install the docker community collection needed for your playbook
+          # Install the docker community collection
           ansible-galaxy collection install community.docker
           
-          # Run the playbook using the IP captured in Step 5
-          # We pass the server_ip dynamically to Ansible
+          # Run the playbook using the IP captured in Step 7
           ansible-playbook -i "${{ steps.get_ip.outputs.SERVER_IP }}," ansible/deploy.yml \
             -e "ansible_user=ec2-user"
