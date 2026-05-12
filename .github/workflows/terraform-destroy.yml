@@ -24,7 +24,7 @@ jobs:
 
       - name: Terraform Init
         run: |
-          terraform init \
+          terraform init -reconfigure \
             -backend-config="bucket=kali-terraform-state-storage-2026" \
             -backend-config="key=state/terraform.tfstate" \
             -backend-config="region=us-east-1"
