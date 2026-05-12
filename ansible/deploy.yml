@@ -21,7 +21,7 @@
         name: [boto3, botocore]
         executable: pip3
 
-    # --- S3 RESTORE (Simplified to bypass IAM Tagging errors) ---
+    # --- S3 RESTORE ---
     - name: Download state from S3 vault
       amazon.aws.s3_object:
         bucket: monitoring-configs-and-stats-kali
@@ -68,7 +68,7 @@
         group: ec2-user
       loop: [docker-compose.yml, api, website, default.conf, prometheus.yml]
 
-    # --- DOCKER SETUP (Restored) ---
+    # --- DOCKER SETUP ---
     - name: Clean DNF cache
       command: dnf clean all
 
@@ -88,6 +88,12 @@
       get_url:
         url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_facts['architecture'] }}"
         dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: '0755'
+
+    - name: Download Docker Buildx Plugin
+      get_url:
+        url: "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"
+        dest: /usr/local/lib/docker/cli-plugins/docker-buildx
         mode: '0755'
 
     # --- DEPLOYMENT ---
