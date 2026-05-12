@@ -96,6 +96,35 @@
         dest: /usr/local/lib/docker/cli-plugins/docker-buildx
         mode: '0755'
 
+    # --- AUTOMATED BACKUP SETUP (NEW) ---
+    - name: Create the backup script on EC2
+      copy:
+        dest: /home/ec2-user/backup_monitoring.sh
+        mode: '0755'
+        owner: ec2-user
+        group: ec2-user
+        content: |
+          #!/bin/bash
+          TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
+          PROJECT_DIR="/home/ec2-user/terraform-project"
+          BUCKET="monitoring-configs-and-stats-kali"
+          # Package the current data
+          sudo tar -czvf /tmp/monitoring_state.tar.gz -C $PROJECT_DIR ./data/
+          # Update the Master Copy for CI/CD
+          aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
+          # Keep a timestamped version for 30-day history
+          aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
+          # Cleanup
+          rm /tmp/monitoring_state.tar.gz
+
+    - name: Schedule the Backup Cron Job (Every night at 3 AM)
+      ansible.builtin.cron:
+        name: "Nightly Monitoring Backup"
+        minute: "0"
+        hour: "3"
+        user: ec2-user
+        job: "/home/ec2-user/backup_monitoring.sh > /dev/null 2>&1"
+
     # --- DEPLOYMENT ---
     - name: Force remove any conflicting containers
       shell: "docker rm -f backend frontend prometheus grafana || true"
