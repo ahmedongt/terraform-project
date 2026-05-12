@@ -10,7 +10,7 @@
         owner: ec2-user
         group: ec2-user
 
-    # --- NEW: S3 BOOTSTRAP START ---
+    # --- S3 BOOTSTRAP ---
     - name: Install python3-pip using dnf
       dnf:
         name: python3-pip
@@ -18,13 +18,10 @@
 
     - name: Install S3 dependencies (boto3) on EC2
       ansible.builtin.pip:
-        name: 
-          - boto3
-          - botocore
+        name: [boto3, botocore]
         executable: pip3
-    # --- NEW: S3 BOOTSTRAP END ---
 
-    # --- S3 RESTORE START ---
+    # --- S3 RESTORE ---
     - name: Check if monitoring state exists in S3
       amazon.aws.s3_object:
         bucket: monitoring-configs-and-stats-kali
@@ -42,7 +39,7 @@
             dest: /home/ec2-user/terraform-project/monitoring_state.tar.gz
             mode: get
 
-        - name: Extract monitoring state (Restore Brain)
+        - name: Extract monitoring state
           ansible.builtin.unarchive:
             src: /home/ec2-user/terraform-project/monitoring_state.tar.gz
             dest: /home/ec2-user/terraform-project/
@@ -50,94 +47,43 @@
             owner: ec2-user
             group: ec2-user
       when: s3_check is succeeded
-    # --- S3 RESTORE END ---
 
-    # --- DATA PERMISSIONS START ---
-    - name: Create persistent data directories
+    # --- THE PERMANENT FIX: PERMISSION GUARD ---
+    - name: Force Grafana ownership and permissions (User 472)
       file:
-        path: "/home/ec2-user/terraform-project/data/{{ item.path }}"
+        path: /home/ec2-user/terraform-project/data/grafana
         state: directory
-        owner: "{{ item.owner }}"
-        group: ec2-user
+        owner: '472'
+        group: '472'
         mode: '0775'
-      loop:
-        - path: grafana
-          owner: '472'
-        - path: prometheus
-          owner: '65534'
-
-    - name: Force recursive group permissions for backups
-      file:
-        path: "/home/ec2-user/terraform-project/data"
-        state: directory
-        group: ec2-user
         recurse: yes
-        mode: 'g+rX'
-    # --- DATA PERMISSIONS END ---
 
-    # --- PERMANENT FIX START ---
-    - name: Check if prometheus.yml is accidentally a directory
-      stat:
-        path: "/home/ec2-user/terraform-project/prometheus.yml"
-      register: prom_path
-
-    - name: Remove accidental prometheus directory if it exists
+    - name: Force Prometheus ownership and permissions (User 65534)
       file:
-        path: "/home/ec2-user/terraform-project/prometheus.yml"
-        state: absent
-      when: prom_path.stat.isdir is defined and prom_path.stat.isdir
-    # --- PERMANENT FIX END ---
+        path: /home/ec2-user/terraform-project/data/prometheus
+        state: directory
+        owner: '65534'
+        group: '65534'
+        mode: '0775'
+        recurse: yes
 
+    # --- REST OF DEPLOYMENT ---
     - name: Copy project files to EC2
       copy:
         src: "../{{ item }}"
         dest: /home/ec2-user/terraform-project/
         owner: ec2-user
         group: ec2-user
-      loop:
-        - docker-compose.yml
-        - api
-        - website
-        - default.conf
-        - prometheus.yml
+      loop: [docker-compose.yml, api, website, default.conf, prometheus.yml]
 
-    # --- DNF CACHE CLEAN FIX ---
-    - name: Clean DNF cache to prevent RPM errors
+    - name: Clean DNF cache
       command: dnf clean all
 
     - name: Install Docker Engine
-      dnf:
-        name: docker
-        state: present
+      dnf: { name: docker, state: present }
 
     - name: Ensure Docker Service is started
-      systemd:
-        name: docker
-        state: started
-        enabled: yes
-
-    - name: Create Docker CLI plugins directory
-      file:
-        path: /usr/local/lib/docker/cli-plugins
-        state: directory
-        mode: '0755'
-
-    - name: Download Docker Compose
-      get_url:
-        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_facts['architecture'] }}"
-        dest: /usr/local/lib/docker/cli-plugins/docker-compose
-        mode: '0755'
-        force: yes
-
-    - name: Download Docker Buildx
-      get_url:
-        url: "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"
-        dest: /usr/local/lib/docker/cli-plugins/docker-buildx
-        mode: '0755'
-        force: yes
-
-    - name: Force remove any conflicting containers
-      shell: "docker rm -f backend frontend prometheus grafana || true"
+      systemd: { name: docker, state: started, enabled: yes }
 
     - name: Deploy fresh containers
       community.docker.docker_compose_v2:
