@@ -21,34 +21,26 @@
         name: [boto3, botocore]
         executable: pip3
 
-    # --- S3 RESTORE ---
-    - name: Check if monitoring state exists in S3
+    # --- S3 RESTORE (Simplified to bypass IAM Tagging errors) ---
+    - name: Download state from S3 vault
       amazon.aws.s3_object:
         bucket: monitoring-configs-and-stats-kali
         object: monitoring_state.tar.gz
-        mode: geturl
-      register: s3_check
+        dest: /home/ec2-user/terraform-project/monitoring_state.tar.gz
+        mode: get
       ignore_errors: yes
+      register: s3_download
 
-    - name: Download and Extract State from S3
-      block:
-        - name: Download state from S3 vault
-          amazon.aws.s3_object:
-            bucket: monitoring-configs-and-stats-kali
-            object: monitoring_state.tar.gz
-            dest: /home/ec2-user/terraform-project/monitoring_state.tar.gz
-            mode: get
+    - name: Extract monitoring state
+      ansible.builtin.unarchive:
+        src: /home/ec2-user/terraform-project/monitoring_state.tar.gz
+        dest: /home/ec2-user/terraform-project/
+        remote_src: yes
+        owner: ec2-user
+        group: ec2-user
+      when: s3_download is succeeded
 
-        - name: Extract monitoring state
-          ansible.builtin.unarchive:
-            src: /home/ec2-user/terraform-project/monitoring_state.tar.gz
-            dest: /home/ec2-user/terraform-project/
-            remote_src: yes
-            owner: ec2-user
-            group: ec2-user
-      when: s3_check is succeeded
-
-    # --- THE PERMANENT FIX: PERMISSION GUARD ---
+    # --- PERMISSION GUARD ---
     - name: Force Grafana ownership and permissions (User 472)
       file:
         path: /home/ec2-user/terraform-project/data/grafana
@@ -67,7 +59,7 @@
         mode: '0775'
         recurse: yes
 
-    # --- REST OF DEPLOYMENT ---
+    # --- CONFIGURATION ---
     - name: Copy project files to EC2
       copy:
         src: "../{{ item }}"
@@ -76,6 +68,7 @@
         group: ec2-user
       loop: [docker-compose.yml, api, website, default.conf, prometheus.yml]
 
+    # --- DOCKER SETUP (Restored) ---
     - name: Clean DNF cache
       command: dnf clean all
 
@@ -84,6 +77,22 @@
 
     - name: Ensure Docker Service is started
       systemd: { name: docker, state: started, enabled: yes }
+
+    - name: Create Docker CLI plugins directory
+      file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker Compose Plugin
+      get_url:
+        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_facts['architecture'] }}"
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: '0755'
+
+    # --- DEPLOYMENT ---
+    - name: Force remove any conflicting containers
+      shell: "docker rm -f backend frontend prometheus grafana || true"
 
     - name: Deploy fresh containers
       community.docker.docker_compose_v2:
