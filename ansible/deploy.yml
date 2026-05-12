@@ -96,7 +96,18 @@
         dest: /usr/local/lib/docker/cli-plugins/docker-buildx
         mode: '0755'
 
-    # --- AUTOMATED BACKUP SETUP (NEW) ---
+    # --- AUTOMATED BACKUP SETUP ---
+    - name: Install cronie (provides crontab)
+      dnf:
+        name: cronie
+        state: present
+
+    - name: Ensure crond is started and enabled
+      systemd:
+        name: crond
+        state: started
+        enabled: yes
+
     - name: Create the backup script on EC2
       copy:
         dest: /home/ec2-user/backup_monitoring.sh
