@@ -16,6 +16,7 @@
         name: python3-pip
         state: present
 
+    # Using pip to install boto3 for S3 modules
     - name: Install S3 dependencies (boto3) on EC2
       ansible.builtin.pip:
         name: [boto3, botocore]
@@ -119,14 +120,14 @@
           TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
           PROJECT_DIR="/home/ec2-user/terraform-project"
           BUCKET="monitoring-configs-and-stats-kali"
-          # Package the current data
+          # Package the current data using sudo for restricted files
           sudo tar -czvf /tmp/monitoring_state.tar.gz -C $PROJECT_DIR ./data/
           # Update the Master Copy for CI/CD
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
           # Keep a timestamped version for 30-day history
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
-          # Cleanup
-          rm /tmp/monitoring_state.tar.gz
+          # Cleanup using sudo -f to prevent interactive prompts
+          sudo rm -f /tmp/monitoring_state.tar.gz
 
     - name: Schedule the Backup Cron Job (Every night at 3 AM)
       ansible.builtin.cron:
