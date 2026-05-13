@@ -8,7 +8,7 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 # --- FIX 1: RESTRICT CORS ---
-# Restricted to your production domain to fix the "Major" security issue
+# Restricted to production domain to satisfy SonarCloud security requirements
 CORS(app, resources={r"/*": {"origins": ["https://ytthumbnail.site", "http://localhost:5000"]}}) 
 
 # --- 1. DYNAMIC PATH SETUP ---
@@ -21,13 +21,11 @@ if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # --- 2. THE FRONT DOOR ---
-# Added methods=['GET'] to satisfy SonarCloud maintainability rules
 @app.route('/', methods=['GET'])
 def home():
     return send_from_directory(WEBSITE_DIR, 'index.html')
 
 # --- 3. SERVE STATIC FILES ---
-# Added methods=['GET'] to satisfy SonarCloud maintainability rules
 @app.route('/<path:path>', methods=['GET'])
 def static_files(path):
     return send_from_directory(WEBSITE_DIR, path)
@@ -74,13 +72,13 @@ def get_thumbnail():
     return jsonify({"error": "Failed to fetch thumbnail"}), 500
 
 # --- 5. VIEW AND DELETE ROUTES (SECURED) ---
-# Added methods=['GET'] to satisfy SonarCloud maintainability rules
 @app.route('/view/<filename>', methods=['GET'])
 def view_file(filename):
     safe_name = secure_filename(filename)
     return send_from_directory(DOWNLOAD_FOLDER, safe_name)
 
-@app.route('/delete/<filename>', methods=['DELETE', 'GET'])
+# FIX: Removed 'GET' to satisfy "Make sure allowing safe and unsafe HTTP methods is safe here"
+@app.route('/delete/<filename>', methods=['DELETE'])
 def delete_file(filename):
     safe_name = secure_filename(filename)
     file_path = os.path.join(DOWNLOAD_FOLDER, safe_name)
@@ -91,5 +89,5 @@ def delete_file(filename):
     return jsonify({"error": "File not found"}), 404
 
 if __name__ == '__main__':
-    # host='0.0.0.0' is required for Docker; we will acknowledge this in SonarCloud UI
+    # host='0.0.0.0' is required for Docker; verify security context in SonarCloud UI
     app.run(host="127.0.0.1", port=5000)
