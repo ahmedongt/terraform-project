@@ -11,20 +11,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Copy requirements and ensure user-1 owns the file
-COPY --chown=user-1:user-1 requirements.txt .
+# 3. Copy requirements as READ-ONLY (chmod=444)
+# This fixes the "Make sure no write permissions are assigned" hotspot
+COPY --chown=user-1:user-1 --chmod=444 requirements.txt .
 
 # 4. Security and optimization environment variables
 ENV PIP_NO_CACHE_DIR=1
 
-# 5. Switch to the non-root user to install dependencies and run the app
+# 5. Switch to the non-root user
 USER user-1
 RUN pip install --no-cache-dir --user --only-binary :all: -r requirements.txt
 
-# 6. Copy application code and ensure user-1 owns it
-COPY --chown=user-1:user-1 app.py .
+# 6. Copy app code as READ-ONLY (chmod=444)
+COPY --chown=user-1:user-1 --chmod=444 app.py .
 
-# Add the local user-1 bin folder to the PATH so Python can find the libraries
+# Add the local user-1 bin folder to the PATH
 ENV PATH="/home/user-1/.local/bin:${PATH}"
 
 EXPOSE 5000
