@@ -17,18 +17,41 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # 1. CHECKOUT CODE (With full history for SonarCloud)
+      # 1. CHECKOUT CODE
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. SONARCLOUD SCAN (The Quality Gate)
+      # --- NEW: SETUP PYTHON & RUN TESTS FOR SONARCLOUD ---
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies for testing
+        run: |
+          pip install pytest pytest-cov
+          pip install -r api/requirements.txt
+
+      - name: Run Tests with Coverage
+        # This creates the 'coverage.xml' that SonarCloud needs to see 80%+ coverage
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/api
+          pytest --cov=api --cov-report=xml api/test_app.py
+
+      # 2. SONARCLOUD SCAN
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.sources=api,website
+            -Dsonar.tests=api
+            -Dsonar.test.inclusions=api/test_app.py
 
       # 3. AUTHENTICATE WITH AWS
       - name: Configure AWS Credentials
@@ -87,7 +110,7 @@ jobs:
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 8. SETUP SSH AGENT (For Ansible)
+      # 8. SETUP SSH AGENT
       - name: Setup SSH Agent
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: webfactory/ssh-agent@v0.9.0
@@ -100,9 +123,6 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: False
         run: |
-          # Install the docker community collection
           ansible-galaxy collection install community.docker
-          
-          # Run the playbook using the IP captured in Step 7
           ansible-playbook -i "${{ steps.get_ip.outputs.SERVER_IP }}," ansible/deploy.yml \
             -e "ansible_user=ec2-user"
