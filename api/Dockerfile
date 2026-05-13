@@ -15,11 +15,15 @@ COPY requirements.txt .
 ENV PIP_NO_CACHE_DIR=1
 
 # 4. Install dependencies 
-# FIX: Added --only-binary :all: to prevent execution of source setup scripts
+# Using --only-binary :all: to prevent execution of source setup scripts
 RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt
 
-# 5. Copy application code
-COPY . .
+# 5. Copy application code specifically
+# FIX: Instead of COPY . ., we copy only what is required to run the API
+COPY app.py .
+
+# If you have your website folder inside the api directory, uncomment the line below:
+# COPY website/ ./website/
 
 EXPOSE 5000
 

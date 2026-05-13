@@ -1,0 +1,17 @@
+# Ignore git metadata
+.git
+.gitignore
+
+# Ignore Python cache and environments
+__pycache__/
+*.pyc
+venv/
+env/
+
+# Ignore sensitive files and IDE settings
+.env
+.vscode/
+.idea/
+
+# Ignore the downloads folder (we want a fresh one in Docker)
+downloads/
