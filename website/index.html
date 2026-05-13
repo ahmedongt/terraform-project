@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YT Thumbnail Downloader</title>
 
-    <!-- FIX: Added Subresource Integrity (SRI) hashes to satisfy SonarCloud Security rules -->
     <script src="https://cdn.tailwindcss.com/3.4.1" 
             integrity="sha384-96YI7G3BfK5A2/P6b1W4J5F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7" 
             crossorigin="anonymous"></script>
@@ -36,7 +35,6 @@
 
         <div id="resultArea" class="mt-8 hidden border-t border-gray-700 pt-6 animate-fade-in">
             <div class="relative group">
-                <!-- FIX: Added alt attribute to satisfy SonarCloud Accessibility rules -->
                 <img id="thumbPreview" alt="YouTube Thumbnail Preview" class="w-full rounded-xl shadow-md mb-6 border border-gray-600 transition-transform group-hover:scale-[1.02]">
             </div>
 
@@ -121,7 +119,9 @@
                 link.download = data.filename;
                 document.body.appendChild(link);
                 link.click();
-                document.body.removeChild(link);
+                
+                // FIX: Modern way to remove element from DOM
+                link.remove();
             };
 
             deleteBtn.onclick = async () => {
