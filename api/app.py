@@ -3,14 +3,13 @@ import os
 from flask import Flask, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 import requests
-from werkzeug.utils import secure_filename # Added for security
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 # --- FIX 1: RESTRICT CORS ---
-# Instead of CORS(app), we limit it to your domain or a specific origin.
-# For local testing, you can keep it as is, but for SonarCloud, we'll be more specific.
-CORS(app, resources={r"/*": {"origins": "*"}}) 
+# Restricted to your production domain to fix the "Major" security issue
+CORS(app, resources={r"/*": {"origins": ["https://ytthumbnail.site", "http://localhost:5000"]}}) 
 
 # --- 1. DYNAMIC PATH SETUP ---
 API_DIR = os.path.dirname(os.path.abspath(__file__)) 
@@ -22,12 +21,14 @@ if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # --- 2. THE FRONT DOOR ---
-@app.route('/')
+# Added methods=['GET'] to satisfy SonarCloud maintainability rules
+@app.route('/', methods=['GET'])
 def home():
     return send_from_directory(WEBSITE_DIR, 'index.html')
 
 # --- 3. SERVE STATIC FILES ---
-@app.route('/<path:path>')
+# Added methods=['GET'] to satisfy SonarCloud maintainability rules
+@app.route('/<path:path>', methods=['GET'])
 def static_files(path):
     return send_from_directory(WEBSITE_DIR, path)
 
@@ -57,7 +58,6 @@ def get_thumbnail():
         response = requests.get(thumb_url)
 
     if response.status_code == 200:
-        # Use secure_filename to clean the ID just in case
         safe_id = secure_filename(video_id)
         filename = f"thumb_{safe_id}.jpg"
         file_path = os.path.join(DOWNLOAD_FOLDER, filename)
@@ -74,16 +74,14 @@ def get_thumbnail():
     return jsonify({"error": "Failed to fetch thumbnail"}), 500
 
 # --- 5. VIEW AND DELETE ROUTES (SECURED) ---
-@app.route('/view/<filename>')
+# Added methods=['GET'] to satisfy SonarCloud maintainability rules
+@app.route('/view/<filename>', methods=['GET'])
 def view_file(filename):
-    # --- FIX 2: PREVENT PATH TRAVERSAL ---
-    # secure_filename() removes things like ../ that allow hackers to escape the folder
     safe_name = secure_filename(filename)
     return send_from_directory(DOWNLOAD_FOLDER, safe_name)
 
 @app.route('/delete/<filename>', methods=['DELETE', 'GET'])
 def delete_file(filename):
-    # --- FIX 3: PREVENT PATH TRAVERSAL ---
     safe_name = secure_filename(filename)
     file_path = os.path.join(DOWNLOAD_FOLDER, safe_name)
     
@@ -93,7 +91,5 @@ def delete_file(filename):
     return jsonify({"error": "File not found"}), 404
 
 if __name__ == '__main__':
-    # --- FIX 4: NETWORK BINDING ---
-    # SonarCloud flags 0.0.0.0 as a risk. In Docker, we need it. 
-    # For the scan, this is fine, but we'll acknowledge it in the dashboard later.
+    # host='0.0.0.0' is required for Docker; we will acknowledge this in SonarCloud UI
     app.run(host='0.0.0.0', port=5000)
