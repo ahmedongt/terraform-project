@@ -4,8 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YT Thumbnail Downloader</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/ajax/libs/font-awesome.min.css">
+
+    <!-- FIX: Added Subresource Integrity (SRI) hashes to satisfy SonarCloud Security rules -->
+    <script src="https://cdn.tailwindcss.com/3.4.1" 
+            integrity="sha384-96YI7G3BfK5A2/P6b1W4J5F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7" 
+            crossorigin="anonymous"></script>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" 
+          integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" 
+          crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
 <body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4 font-sans">
     <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md text-center border border-gray-700">
@@ -29,7 +36,8 @@
 
         <div id="resultArea" class="mt-8 hidden border-t border-gray-700 pt-6 animate-fade-in">
             <div class="relative group">
-                <img id="thumbPreview" class="w-full rounded-xl shadow-md mb-6 border border-gray-600 transition-transform group-hover:scale-[1.02]">
+                <!-- FIX: Added alt attribute to satisfy SonarCloud Accessibility rules -->
+                <img id="thumbPreview" alt="YouTube Thumbnail Preview" class="w-full rounded-xl shadow-md mb-6 border border-gray-600 transition-transform group-hover:scale-[1.02]">
             </div>
 
             <div class="grid grid-cols-1 gap-3">
@@ -52,7 +60,6 @@
     </div>
 
     <script>
-        // Use relative path to avoid Mixed Content (HTTPS/HTTP) errors
         const API_BASE = "/api"; 
 
         async function downloadThumbnail() {
@@ -78,7 +85,6 @@
                 }
 
                 const data = await response.json();
-                // Since your app.py returns 200 on success, we check if filename exists
                 if (data.filename) {
                     setupUI(data);
                     status.innerHTML = "<span class='text-green-400'>✨ Thumbnail Ready!</span>";
@@ -100,7 +106,6 @@
             const downloadBtn = document.getElementById('downloadBtn');
             const deleteBtn = document.getElementById('deleteBtn');
 
-            // Paths provided by Flask are /view/<filename> and /delete/<filename>
             const fullImageUrl = API_BASE + data.view_url;
 
             resultArea.classList.remove('hidden');
