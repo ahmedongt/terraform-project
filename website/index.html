@@ -5,13 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YT Thumbnail Downloader</title>
 
-    <script src="https://cdn.tailwindcss.com/3.4.1" 
-            integrity="sha384-96YI7G3BfK5A2/P6b1W4J5F7G8H9I0J1K2L3M4N5O6P7Q8R9S0T1U2V3W4X5Y6Z7" 
-            crossorigin="anonymous"></script>
+    <script src="https://cdn.tailwindcss.com/3.4.1"></script>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" 
           integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" 
           crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <style>
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+    </style>
 </head>
 <body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4 font-sans">
     <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md text-center border border-gray-700">
@@ -79,7 +85,7 @@
                 const response = await fetch(`${API_BASE}/get-thumb?url=${encodeURIComponent(urlInput)}`);
                 
                 if (!response.ok) {
-                    throw new Error(`Server Error: ${response.status}. Please check your API.`);
+                    throw new Error(`Server Error: ${response.status}`);
                 }
 
                 const data = await response.json();
@@ -111,17 +117,20 @@
             viewBtn.href = fullImageUrl;
 
             downloadBtn.onclick = async () => {
-                const image = await fetch(fullImageUrl);
-                const imageBlog = await image.blob();
-                const imageURL = URL.createObjectURL(imageBlog);
-                const link = document.createElement('a');
-                link.href = imageURL;
-                link.download = data.filename;
-                document.body.appendChild(link);
-                link.click();
-                
-                // FIX: Modern way to remove element from DOM
-                link.remove();
+                try {
+                    const image = await fetch(fullImageUrl);
+                    const imageBlob = await image.blob();
+                    const imageURL = URL.createObjectURL(imageBlob);
+                    const link = document.createElement('a');
+                    link.href = imageURL;
+                    link.download = data.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(imageURL);
+                } catch (err) {
+                    console.error("Download failed", err);
+                }
             };
 
             deleteBtn.onclick = async () => {
