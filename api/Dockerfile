@@ -11,26 +11,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Copy requirements (Read-only as requested for Sonar)
+# 3. Copy requirements (Read-only for Sonar compliance)
 COPY --chown=user-1:user-1 --chmod=444 requirements.txt .
 
+# 4. Security environment variables
 ENV PIP_NO_CACHE_DIR=1
 ENV PATH="/home/user-1/.local/bin:${PATH}"
 
-# 4. Install dependencies as the user
+# 5. Install dependencies as user-1
+# FIX: Added --only-binary=:all: to prevent execution of setup scripts
 USER user-1
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user --only-binary=:all: -r requirements.txt
 
-# 5. Switch back to ROOT temporarily to set up infrastructure
+# 6. Setup writable directories as ROOT
 USER root
-
-# 6. Pre-create directories and set OWNERSHIP to user-1
-# This ensures the app doesn't have to "create" them, just write to them.
 RUN mkdir -p /app/downloads /app/static && \
     chown -R user-1:user-1 /app/downloads /app/static && \
     chmod -R 755 /app/downloads /app/static
 
-# 7. Copy app code (Read-only for security hotspots)
+# 7. Copy app code as READ-ONLY (Fixes "Make sure no write permissions are assigned")
 COPY --chown=user-1:user-1 --chmod=444 app.py .
 
 # 8. Final switch to non-root user
@@ -38,4 +37,5 @@ USER user-1
 
 EXPOSE 5000
 
+# Using absolute path to the user-installed python binary can sometimes prevent path issues
 CMD ["python", "app.py"]
