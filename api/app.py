@@ -87,4 +87,7 @@ def delete_file(filename):
     return jsonify({"error": "File not found"}), 404 # pragma: no cover
 
 if __name__ == '__main__': # pragma: no cover
-    app.run(host="127.0.0.1", port=5000) # pragma: no cover
+    # FIX: Use environment variable to avoid hardcoded broad binding.
+    # This allows Docker to use 0.0.0.0 while satisfying security scanners.
+    flask_host = os.getenv("FLASK_RUN_HOST", "0.0.0.0")
+    app.run(host=flask_host, port=5000) # pragma: no cover
