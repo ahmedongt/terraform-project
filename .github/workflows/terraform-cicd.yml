@@ -17,19 +17,17 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # 1. CHECKOUT CODE
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. SETUP PYTHON & RUN TESTS FOR SONARCLOUD
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Install dependencies for testing
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov flask flask-cors requests werkzeug
@@ -38,18 +36,18 @@ jobs:
       - name: Run Tests with Coverage
         run: |
           touch api/__init__.py
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/api:$(pwd)
-          python -m pytest --cov=api --cov-report=xml:coverage.xml --cov-config=.coveragerc api/
-        continue-on-error: true
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/api
+          # Force the report to be written to the root directory
+          python -m pytest --cov=api --cov-report=xml:coverage.xml api/
+          # Debug: List files to ensure coverage.xml exists
+          ls -l coverage.xml
 
-      # 3. SONARCLOUD SCAN (FIXED SECRETS INJECTION)
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          # Using project-prop ensures secrets are expanded correctly before the scan starts
           project-prop: |
             sonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
             sonar.organization=${{ secrets.SONAR_ORGANIZATION }}
@@ -59,7 +57,7 @@ jobs:
             sonar.test.inclusions=api/test_*.py
             sonar.coverage.exclusions=api/test_*.py,website/**/*,ansible/**/*,*.tf,*.yml,*.md,**/__init__.py
 
-      # 4. AUTHENTICATE WITH AWS
+      # Rest of your AWS/Terraform/Ansible steps remain exactly the same...
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -67,13 +65,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # 5. SETUP TERRAFORM
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
 
-      # 6. INITIALIZE
       - name: Terraform Init
         run: |
           terraform init \
@@ -97,7 +93,6 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 7. APPLY CHANGES
       - name: Terraform Apply
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: terraform apply -auto-approve
@@ -109,21 +104,18 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 8. CAPTURE SERVER IP
       - name: Get Server IP
         id: get_ip
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name : 'push'
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 9. SETUP SSH AGENT
       - name: Setup SSH Agent
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      # 10. RUN ANSIBLE DEPLOYMENT
       - name: Run Ansible Playbook
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         env:
