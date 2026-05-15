@@ -39,20 +39,16 @@ jobs:
         run: |
           touch api/__init__.py
           export PYTHONPATH=$PYTHONPATH:$(pwd)/api
-          # Generate coverage.xml at the root
           python -m pytest --cov=api --cov-report=xml:coverage.xml api/
         continue-on-error: true
 
-      # 3. SONARCLOUD SCAN (FIXED: Using env for property injection)
+      # 3. SONARCLOUD SCAN (FIXED: Settings moved to properties file)
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
-          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
         with:
-          # Arguments are empty because settings are in sonar-project.properties
           args: ""
 
       # 4. AUTHENTICATE WITH AWS
