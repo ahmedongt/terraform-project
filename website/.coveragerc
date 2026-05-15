@@ -1,0 +1,11 @@
+[run]
+source = api
+omit = 
+    api/test_*
+    api/__init__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if __name__ == .__main__.:
