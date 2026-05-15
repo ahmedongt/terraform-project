@@ -40,7 +40,6 @@ def get_thumbnail():
 
     if not os.path.exists(file_path): # pragma: no cover
         thumb_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
-        # Sonar Compliance: Added timeout to prevent DoS hotspots
         try:
             response = requests.get(thumb_url, timeout=10) 
             if response.status_code != 200:
@@ -73,7 +72,6 @@ def delete_file(filename):
     safe_name = secure_filename(filename)
     file_path = os.path.abspath(os.path.join(DOWNLOAD_FOLDER, safe_name))
     
-    # Path Traversal Check
     if not file_path.startswith(os.path.abspath(DOWNLOAD_FOLDER)): # pragma: no cover
         return jsonify({"error": "Unauthorized path"}), 403 # pragma: no cover
 
