@@ -37,28 +37,27 @@ jobs:
 
       - name: Run Tests with Coverage
         run: |
-          # Ensure the 'api' directory is recognized as a package
           touch api/__init__.py
           export PYTHONPATH=$PYTHONPATH:$(pwd)/api:$(pwd)
-          # Explicitly run all tests and generate a clean coverage report
+          # Generate the coverage report
           python -m pytest --cov=api --cov-report=xml:coverage.xml --cov-config=.coveragerc api/
         continue-on-error: true
 
-      # 3. SONARCLOUD SCAN
+      # 3. SONARCLOUD SCAN (FIXED SECRETS MAPPING)
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=api
             -Dsonar.tests=api
             -Dsonar.test.inclusions=api/test_*.py
             -Dsonar.coverage.exclusions=api/test_*.py,website/**/*,ansible/**/*,*.tf,*.yml,*.md,**/__init__.py
-            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
-            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
 
       # 4. AUTHENTICATE WITH AWS
       - name: Configure AWS Credentials
