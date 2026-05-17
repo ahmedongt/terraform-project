@@ -11,7 +11,8 @@ terraform {
     key            = "state/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    use_lockfile   = true # Fixed deprecated parameter
+    dynamodb_table = "kali-terraform-state-locks" # Links your permanent locking table!
+    use_lockfile   = true 
   }
 
   required_providers {
@@ -44,9 +45,8 @@ data "http" "cloudflare_ips" {
 }
 
 locals {
-  cloudflare_ipv4 = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
-  safe_user_name  = lower(replace(var.user_name, " ", "-"))
-  # Define the bucket name once here for easy reference
+  cloudflare_ipv4   = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
+  safe_user_name    = lower(replace(var.user_name, " ", "-"))
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
@@ -104,9 +104,6 @@ resource "aws_s3_bucket" "website_bucket" {
   force_destroy = true
 }
 
-# NOTE: The Monitoring Vault bucket resource has been removed from here. 
-# It is now a PERMANENT resource managed outside of this lifecycle.
-
 # 4. THE IDENTITY CARD (IAM)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
@@ -124,7 +121,6 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Access to BOTH buckets (Hardcoded monitoring bucket name)
         Action   = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
         Effect   = "Allow"
         Resource = [
