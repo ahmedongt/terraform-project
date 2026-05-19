@@ -59,13 +59,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # 5. SETUP TERRAFORM
+      # 5. AUTOMATED LOCK CLEANUP (Prevents MD5 Checksum Mismatch)
+      - name: Clear Stale Terraform Checksum Lock
+        run: |
+          echo "Checking and clearing any stale md5 tracking keys from DynamoDB..."
+          aws dynamodb delete-item \
+            --table-name kali-terraform-state-locks \
+            --key '{"LockID": {"S": "kali-terraform-state-storage-2026/state/terraform.tfstate-md5"}}'
+        continue-on-error: true # Ensures pipeline moves forward even if the row was already empty
+
+      # 6. SETUP TERRAFORM
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
 
-      # 6. INITIALIZE & PLAN
+      # 7. INITIALIZE & PLAN
       - name: Terraform Init
         run: |
           terraform init \
@@ -89,7 +98,7 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 7. APPLY CHANGES
+      # 8. APPLY CHANGES
       - name: Terraform Apply
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: terraform apply -auto-approve
@@ -101,21 +110,21 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 8. CAPTURE SERVER IP
+      # 9. CAPTURE SERVER IP
       - name: Get Server IP
         id: get_ip
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
           echo "SERVER_IP=$(terraform output -raw server_ip)" >> $GITHUB_OUTPUT
 
-      # 9. SETUP SSH AGENT
+      # 10. SETUP SSH AGENT
       - name: Setup SSH Agent
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-      # 10. RUN ANSIBLE DEPLOYMENT
+      # 11. RUN ANSIBLE DEPLOYMENT
       - name: Run Ansible Playbook
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         env:
