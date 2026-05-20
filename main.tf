@@ -54,6 +54,11 @@ locals {
 resource "aws_eip" "web_eip" {
   instance = aws_instance.my_web_server.id
   domain   = "vpc"
+
+  # Prevents EIP from blocking the instance recreation lifecycle
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # 2. THE FIREWALL (HARDENED - PORT 22 REMOVED FROM PUBLIC INTERNET)
@@ -87,6 +92,11 @@ resource "aws_security_group" "web_traffic" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Creates the new security group rules before ripping out the old ones
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -162,6 +172,11 @@ resource "aws_instance" "my_web_server" {
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
+
+  # Spins up the new virtual machine before terminating the old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # 6. THE DNS BRIDGE
