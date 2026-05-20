@@ -63,7 +63,8 @@ resource "aws_eip" "web_eip" {
 
 # 2. THE FIREWALL (HARDENED - PORT 22 REMOVED FROM PUBLIC INTERNET)
 resource "aws_security_group" "web_traffic" {
-  name        = "allow_web_api_and_ssh_cloudflare"
+  # CHANGED: Switched to name_prefix to avoid duplicate naming deadlocks during creation
+  name_prefix = "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
 
   ingress {
