@@ -56,10 +56,10 @@ resource "aws_eip" "web_eip" {
   domain   = "vpc"
 }
 
-# 2. THE FIREWALL (HARDENED)
+# 2. THE FIREWALL (HARDENED - PORT 22 REMOVED FROM PUBLIC INTERNET)
 resource "aws_security_group" "web_traffic" {
   name        = "allow_web_api_and_ssh_cloudflare"
-  description = "80/443 (Cloudflare), 5000 (API), 22 (SSH ONLY)"
+  description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
 
   ingress {
     from_port   = 80
@@ -82,13 +82,6 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = local.cloudflare_ipv4
   }
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -98,13 +91,12 @@ resource "aws_security_group" "web_traffic" {
 }
 
 # 3. THE STORAGE BUCKETS
-# Bucket for the Website Frontend (This remains disposable)
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# 4. THE IDENTITY CARD (IAM)
+# 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER POLICIES)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -113,6 +105,7 @@ resource "aws_iam_role" "web_admin_role" {
   })
 }
 
+# Custom Policy for S3 access
 resource "aws_iam_role_policy" "s3_and_ssm_access" {
   name = "s3_and_ssm_access"
   role = aws_iam_role.web_admin_role.id
@@ -129,14 +122,15 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
           "arn:aws:s3:::${local.monitoring_bucket}",
           "arn:aws:s3:::${local.monitoring_bucket}/*"
         ]
-      },
-      {
-        Action   = ["ssm:UpdateInstanceInformation", "ssm:ListInstanceAssociations", "ssm:PutInventory"]
-        Effect   = "Allow"
-        Resource = "*"
       }
     ]
   })
+}
+
+# Attach Official AWS Systems Manager Policy to allow secure SSH-less connectivity
+resource "aws_iam_role_policy_attachment" "ssm_core_attach" {
+  role       = aws_iam_role.web_admin_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "web_instance_profile" {
@@ -198,4 +192,10 @@ output "website_url" {
 
 output "server_ip" {
   value = aws_eip.web_eip.public_ip
+}
+
+# Dynamic Output required by the GitHub Actions automated SSM Proxy Runner
+output "ec2_instance_id" {
+  value       = aws_instance.my_web_server.id
+  description = "The target AWS Instance ID for Session Manager mapping"
 }
