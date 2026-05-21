@@ -136,6 +136,20 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
+      # 10b. DYNAMIC POLLING CHECK: WAIT UNTIL SSM IS ONLINE BEFORE RUNNING ANSIBLE
+      - name: Wait until SSM Agent is Online
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        env:
+          TARGET_INSTANCE_ID: ${{ steps.get_instance_id.outputs.INSTANCE_ID }}
+        run: |
+          echo "Target Instance verified: $TARGET_INSTANCE_ID"
+          echo "Checking connection status with AWS Systems Manager Core..."
+          until aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query "InstanceInformationList[0].PingStatus" --output text | grep -q "Online"; do
+            echo "Instance SSM agent is initializing dependencies... Checking status again in 10 seconds."
+            sleep 10
+          done
+          echo "SSM Agent status confirmed: ONLINE. Proceeding to container configuration."
+
       # 11. RUN ANSIBLE DEPLOYMENT VIA SECURE SSM PROXYJUMP TUNNEL
       - name: Run Ansible Playbook via SSM Secure Tunnel
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
