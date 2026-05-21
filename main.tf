@@ -177,24 +177,22 @@ resource "aws_instance" "my_web_server" {
               mkdir -p /var/www/html
 
               # --- FIXED PERSISTENT MONITORING DATA RECOVERY ---
-              # Pre-build native directories matching target runtime mount structures
-              mkdir -p /home/kali/monitoring_data/grafana
-              mkdir -p /home/kali/monitoring_data/prometheus
+              # Pre-build the named docker volume directory structure matching your compose environment
+              mkdir -p /var/lib/docker/volumes/terraform-project_grafana_data/_data
 
               # Copy backup compression stack from target S3 metrics vault
               echo "Pulling down persistent monitoring state archive from S3..."
               aws s3 cp s3://${local.monitoring_bucket}/monitoring_state.tar.gz /tmp/monitoring_state.tar.gz
-
-              # FIXED: Dynamically strip BOTH layers ('.' and 'data') to unpack directly into runtime mount paths
+              
               if [ -f /tmp/monitoring_state.tar.gz ]; then
-                  echo "Extracting backup payload and stripping 2 nested wrapper layers..."
-                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C /home/kali/monitoring_data/
+                  echo "Extracting backup payload directly into named Docker volume storage..."
+                  # Strips the '_data/' folder wrapper from our archive and extracts contents cleanly into the volume root
+                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=1 -C /var/lib/docker/volumes/terraform-project_grafana_data/_data/
               fi
 
-              # Explicit permissions matching container inner IDs to stop write crashes
-              chown -R 472:472 /home/kali/monitoring_data/grafana
-              chown -R 65534:65534 /home/kali/monitoring_data/prometheus
-              chmod -R 775 /home/kali/monitoring_data/
+              # Explicit permissions inside the volume path to avoid inner container write blockages
+              chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data
+              chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data/_data
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
