@@ -175,6 +175,26 @@ resource "aws_instance" "my_web_server" {
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               mkdir -p /var/www/html
+
+              # --- PERSISTENT MONITORING DATA RECOVERY ---
+              # Pre-build native directories matching target runtime mount structures
+              mkdir -p /home/kali/monitoring_data/grafana
+              mkdir -p /home/kali/monitoring_data/prometheus
+
+              # Copy backup compression stack from target S3 metrics vault
+              echo "Pulling down persistent monitoring state archive from S3..."
+              aws s3 cp s3://${local.monitoring_bucket}/monitoring_state.tar.gz /tmp/monitoring_state.tar.gz
+
+              # Extract directly on top of the host bind mount engine path
+              if [ -f /tmp/monitoring_state.tar.gz ]; then
+                  echo "Extracting backup payload to /home/kali/monitoring_data/..."
+                  tar -xzf /tmp/monitoring_state.tar.gz -C /home/kali/monitoring_data/
+              fi
+
+              # Explicit permissions matching container inner IDs to stop write crashes
+              chown -R 472:472 /home/kali/monitoring_data/grafana
+              chown -R 65534:65534 /home/kali/monitoring_data/prometheus
+              chmod -R 775 /home/kali/monitoring_data/
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
