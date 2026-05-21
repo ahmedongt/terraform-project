@@ -155,7 +155,12 @@ resource "aws_instance" "my_web_server" {
               dnf install -y docker-buildx-plugin docker-compose-plugin
               systemctl start docker
               systemctl enable docker
+              
+              # Fix: Pre-create ssm-user and grant root-less docker permissions out of the gate
               usermod -a -G docker ec2-user
+              useradd -m ssm-user
+              usermod -a -G docker ssm-user
+              
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               mkdir -p /var/www/html
