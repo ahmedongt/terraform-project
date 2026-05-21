@@ -185,10 +185,10 @@ resource "aws_instance" "my_web_server" {
               echo "Pulling down persistent monitoring state archive from S3..."
               aws s3 cp s3://${local.monitoring_bucket}/monitoring_state.tar.gz /tmp/monitoring_state.tar.gz
 
-              # FIXED: Dynamically strip the inner 'data/' folder tier during unarchiving
+              # FIXED: Dynamically strip BOTH layers ('.' and 'data') to unpack directly into runtime mount paths
               if [ -f /tmp/monitoring_state.tar.gz ]; then
-                  echo "Extracting backup payload and stripping nesting wrapper..."
-                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=1 -C /home/kali/monitoring_data/
+                  echo "Extracting backup payload and stripping 2 nested wrapper layers..."
+                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C /home/kali/monitoring_data/
               fi
 
               # Explicit permissions matching container inner IDs to stop write crashes
