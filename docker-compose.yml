@@ -44,10 +44,11 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./data/prometheus:/prometheus
+      - prometheus_data:/prometheus              # <-- Changed to Named Volume
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.path=/prometheus'
     depends_on:
       - backend
       - node-exporter
@@ -62,6 +63,11 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin 
     volumes:
-      - ./data/grafana:/var/lib/grafana
+      - grafana_data:/var/lib/grafana            # <-- Changed to Named Volume
     depends_on:
       - prometheus
+
+# Declaration of managed named volumes
+volumes:
+  prometheus_data:
+  grafana_data:
