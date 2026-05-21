@@ -176,7 +176,7 @@ resource "aws_instance" "my_web_server" {
               ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               mkdir -p /var/www/html
 
-              # --- PERSISTENT MONITORING DATA RECOVERY ---
+              # --- FIXED PERSISTENT MONITORING DATA RECOVERY ---
               # Pre-build native directories matching target runtime mount structures
               mkdir -p /home/kali/monitoring_data/grafana
               mkdir -p /home/kali/monitoring_data/prometheus
@@ -185,10 +185,10 @@ resource "aws_instance" "my_web_server" {
               echo "Pulling down persistent monitoring state archive from S3..."
               aws s3 cp s3://${local.monitoring_bucket}/monitoring_state.tar.gz /tmp/monitoring_state.tar.gz
 
-              # Extract directly on top of the host bind mount engine path
+              # FIXED: Dynamically strip the inner 'data/' folder tier during unarchiving
               if [ -f /tmp/monitoring_state.tar.gz ]; then
-                  echo "Extracting backup payload to /home/kali/monitoring_data/..."
-                  tar -xzf /tmp/monitoring_state.tar.gz -C /home/kali/monitoring_data/
+                  echo "Extracting backup payload and stripping nesting wrapper..."
+                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=1 -C /home/kali/monitoring_data/
               fi
 
               # Explicit permissions matching container inner IDs to stop write crashes
