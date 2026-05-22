@@ -63,7 +63,7 @@ resource "aws_eip" "web_eip" {
 
 # 2. THE FIREWALL (HARDENED - PORT 22 REMOVED FROM PUBLIC INTERNET)
 resource "aws_security_group" "web_traffic" {
-  # CHANGED: Switched to name_prefix to avoid duplicate naming deadlocks during creation
+  # Switched to name_prefix to avoid duplicate naming deadlocks during creation
   name_prefix = "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
 
@@ -161,19 +161,23 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              
+              echo "=== Starting Clean Infrastructure Provisioning ==="
               dnf update -y
               dnf install -y docker aws-cli
-              dnf install -y docker-buildx-plugin docker-compose-plugin
               systemctl start docker
               systemctl enable docker
+              
+              # Install Standalone Docker Compose Natively for AL2023
+              curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              chmod +x /usr/local/bin/docker-compose
+              ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
               
               # Fix: Pre-create ssm-user and grant root-less docker permissions out of the gate
               usermod -a -G docker ec2-user
               useradd -m ssm-user
               usermod -a -G docker ssm-user
               
-              ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
-              ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               mkdir -p /var/www/html
 
               # --- FIXED PERSISTENT MONITORING DATA RECOVERY ---
@@ -192,7 +196,7 @@ resource "aws_instance" "my_web_server" {
 
               echo "Enforcing strict read/write permissions on restored monitoring assets..."
               # 1. Ensure the volume directory root is completely readable and writable
-              chmod -R 777 /var/lib/docker/volumes/terraform-project_grafana_data/_data
+              chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data/_data
 
               # 2. Fix the SQLite database permissions explicitly if it extracted successfully
               if [ -f /var/lib/docker/volumes/terraform-project_grafana_data/_data/grafana.db ]; then
@@ -201,6 +205,8 @@ resource "aws_instance" "my_web_server" {
 
               # 3. Force inner Grafana user (UID 472) ownership across the unpacked directory structural tree
               chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data
+              
+              echo "=== Provisioning Base Complete ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
