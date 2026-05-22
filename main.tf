@@ -186,13 +186,21 @@ resource "aws_instance" "my_web_server" {
               
               if [ -f /tmp/monitoring_state.tar.gz ]; then
                   echo "Extracting backup payload directly into named Docker volume storage..."
-                  # Strips the '_data/' folder wrapper from our archive and extracts contents cleanly into the volume root
+                  # Strips the wrapper layer from the archive and extracts contents cleanly into the volume root
                   tar -xzf /tmp/monitoring_state.tar.gz --strip-components=1 -C /var/lib/docker/volumes/terraform-project_grafana_data/_data/
               fi
 
-              # Explicit permissions inside the volume path to avoid inner container write blockages
+              echo "Enforcing strict read/write permissions on restored monitoring assets..."
+              # 1. Ensure the volume directory root is completely readable and writable
+              chmod -R 777 /var/lib/docker/volumes/terraform-project_grafana_data/_data
+
+              # 2. Fix the SQLite database permissions explicitly if it extracted successfully
+              if [ -f /var/lib/docker/volumes/terraform-project_grafana_data/_data/grafana.db ]; then
+                  chmod 664 /var/lib/docker/volumes/terraform-project_grafana_data/_data/grafana.db
+              fi
+
+              # 3. Force inner Grafana user (UID 472) ownership across the unpacked directory structural tree
               chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data
-              chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data/_data
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
