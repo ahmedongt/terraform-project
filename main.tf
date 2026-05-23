@@ -169,7 +169,7 @@ resource "aws_instance" "my_web_server" {
               systemctl enable docker
               
               # Install Standalone Docker Compose Natively for AL2023
-              curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+              curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-\$(uname -s)-\$(uname -m)" -o /usr/local/bin/docker-compose
               chmod +x /usr/local/bin/docker-compose
               ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
               
@@ -184,9 +184,9 @@ resource "aws_instance" "my_web_server" {
               # Pre-build the named docker volume directory structure matching your compose environment
               mkdir -p /var/lib/docker/volumes/terraform-project_grafana_data/_data
 
-              # Copy backup compression stack from target S3 metrics vault
-              echo "Pulling down persistent monitoring state archive from S3..."
-              aws s3 cp s3://${local.monitoring_bucket}/monitoring_state.tar.gz /tmp/monitoring_state.tar.gz
+              # Copy the valid, data-heavy backup archive from the backups subdirectory
+              echo "Pulling down persistent monitoring state archive from S3 backups folder..."
+              aws s3 cp s3://${local.monitoring_bucket}/backups/monitoring_state_2026-05-19_03-00.tar.gz /tmp/monitoring_state.tar.gz
               
               if [ -f /tmp/monitoring_state.tar.gz ]; then
                   echo "Extracting backup payload directly into named Docker volume storage..."
@@ -203,7 +203,7 @@ resource "aws_instance" "my_web_server" {
                   chmod 664 /var/lib/docker/volumes/terraform-project_grafana_data/_data/grafana.db
               fi
 
-              # 3. Force inner Grafana user (UID 472) ownership across the unpacked directory structural tree
+              # 3. ANTI-CRASH LOOP SHIELD: Force inner Grafana user (UID 472) ownership before container spinup
               chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data
               
               echo "=== Provisioning Base Complete ==="
