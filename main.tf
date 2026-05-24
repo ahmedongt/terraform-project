@@ -178,56 +178,58 @@ resource "aws_instance" "my_web_server" {
               useradd -m ssm-user
               usermod -a -G docker ssm-user
               
-              # ---------------------------------------------------------------------
-              # FIX ISSUE #1: Kill Sudo Password Prompt Forever for Interactive Shell
-              # ---------------------------------------------------------------------
+              # Kill Sudo Password Prompt Forever for Interactive Shell
               echo "ssm-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ssm-user
               chmod 0440 /etc/sudoers.d/ssm-user
               
               mkdir -p /var/www/html
 
               # ---------------------------------------------------------------------
-              # INITIALIZE THE APPLICATION LAYER FIRST
+              # ASYNCHRONOUS BACKGROUND PERMISSION WATCHDOG DAEMON WITH IAM RETRIES
               # ---------------------------------------------------------------------
-              # This ensures docker creates the named volumes initially before we patch them
-              cd /terraform-project || mkdir -p /terraform-project
+              # Tunnels into a loop waiting up to 10 minutes for Docker Compose volume 
+              # paths to exist and for the EC2 Instance IAM profile policies to propagate.
+              cat << 'SCRIPT' > /usr/local/bin/grafana-volume-heal.sh
+              #!/bin/bash
+              TARGET_DIR="/var/lib/docker/volumes/terraform-project_grafana_data/_data"
               
-              # Note: If docker-compose.yml is managed by your app deployment pipeline, 
-              # it will mount the standard named volume tree.
-              
-              TARGET_VOLUME_DIR="/var/lib/docker/volumes/terraform-project_grafana_data/_data"
-              mkdir -p "$TARGET_VOLUME_DIR"
+              for i in {1..60}; do
+                  if [ -d "$TARGET_DIR" ]; then
+                      echo "Docker volume storage path located. Attempting secure data state extraction..."
+                      
+                      # Keep looping the S3 download string until IAM profile permissions propagate
+                      if aws s3 cp s3://${local.monitoring_bucket}/backups/monitoring_state_2026-05-19_03-00.tar.gz /tmp/monitoring_state.tar.gz; then
+                          echo "Backup metadata tarball downloaded successfully from S3."
+                          
+                          # Safely stop the active container block to safely shift file ownerships
+                          docker stop grafana || true
+                          
+                          rm -rf "$TARGET_DIR"/*
+                          tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C "$TARGET_DIR/"
+                          
+                          echo "Enforcing strict user 472 ownership across data tree components..."
+                          chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data
+                          chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data
+                          
+                          if [ -f "$TARGET_DIR/grafana.db" ]; then
+                              chmod 664 "$TARGET_DIR/grafana.db"
+                              chown 472:472 "$TARGET_DIR/grafana.db"
+                          fi
+                          
+                          docker start grafana || true
+                          echo "Infrastructure metrics storage state successfully healed!"
+                          break
+                      else
+                          echo "AWS IAM profile evaluation or networking not ready yet. Retrying in 10 seconds..."
+                      fi
+                  fi
+                  sleep 10
+              done
+              SCRIPT
 
-              # ---------------------------------------------------------------------
-              # POST-DEPLOYMENT DATA RESTORATION OVERRIDE
-              # ---------------------------------------------------------------------
-              # 1. Stop Grafana to release file handles if it started up via compose
-              docker stop grafana || true
-
-              # 2. Pull down the clean backup from S3
-              echo "Pulling down persistent monitoring state archive from S3 backups folder..."
-              aws s3 cp s3://${local.monitoring_bucket}/backups/monitoring_state_2026-05-19_03-00.tar.gz /tmp/monitoring_state.tar.gz
-              
-              if [ -f /tmp/monitoring_state.tar.gz ]; then
-                  echo "Extracting backup payload directly into named Docker volume storage..."
-                  # Clean wipe any default templates generated during initial startup
-                  rm -rf "$TARGET_VOLUME_DIR"/*
-                  # Strips components to drop data right at the root of the volume mount
-                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C "$TARGET_VOLUME_DIR/"
-              fi
-
-              # 3. ANTI-CRASH LOOP SHIELD: Force permissions recursively on everything
-              echo "Enforcing strict read/write permissions on restored monitoring assets..."
-              chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data
-              chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data
-
-              if [ -f "$TARGET_VOLUME_DIR/grafana.db" ]; then
-                  chmod 664 "$TARGET_VOLUME_DIR/grafana.db"
-                  chown 472:472 "$TARGET_VOLUME_DIR/grafana.db"
-              fi
-
-              # 4. Start Grafana back up with your custom DB fully injected
-              docker start grafana || true
+              chmod +x /usr/local/bin/grafana-volume-heal.sh
+              # Execute background loop asynchronously to ensure standard startup thread does not hang
+              /usr/local/bin/grafana-volume-heal.sh > /var/log/grafana-healer.log 2>&1 &
               
               echo "=== Provisioning Base Complete ==="
               EOF
