@@ -173,7 +173,7 @@ resource "aws_instance" "my_web_server" {
               chmod +x /usr/local/bin/docker-compose
               ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
               
-              # Fix: Pre-create ssm-user and grant root-less docker permissions out of the gate
+              # Pre-create ssm-user and grant root-less docker permissions out of the gate
               usermod -a -G docker ec2-user
               useradd -m ssm-user
               usermod -a -G docker ssm-user
@@ -187,33 +187,47 @@ resource "aws_instance" "my_web_server" {
               mkdir -p /var/www/html
 
               # ---------------------------------------------------------------------
-              # FIX ISSUE #2 & #3: Pre-build volume paths, download backup, and align layout
+              # INITIALIZE THE APPLICATION LAYER FIRST
               # ---------------------------------------------------------------------
+              # This ensures docker creates the named volumes initially before we patch them
+              cd /terraform-project || mkdir -p /terraform-project
+              
+              # Note: If docker-compose.yml is managed by your app deployment pipeline, 
+              # it will mount the standard named volume tree.
+              
               TARGET_VOLUME_DIR="/var/lib/docker/volumes/terraform-project_grafana_data/_data"
               mkdir -p "$TARGET_VOLUME_DIR"
 
-              # Copy the valid, data-heavy backup archive from the backups subdirectory
+              # ---------------------------------------------------------------------
+              # POST-DEPLOYMENT DATA RESTORATION OVERRIDE
+              # ---------------------------------------------------------------------
+              # 1. Stop Grafana to release file handles if it started up via compose
+              docker stop grafana || true
+
+              # 2. Pull down the clean backup from S3
               echo "Pulling down persistent monitoring state archive from S3 backups folder..."
               aws s3 cp s3://${local.monitoring_bucket}/backups/monitoring_state_2026-05-19_03-00.tar.gz /tmp/monitoring_state.tar.gz
               
               if [ -f /tmp/monitoring_state.tar.gz ]; then
                   echo "Extracting backup payload directly into named Docker volume storage..."
-                  # FIX: --strip-components=2 completely skips the nested "./data/grafana/" parent paths
-                  # wrapped inside your backup tarball, dropping files perfectly into the volume root.
+                  # Clean wipe any default templates generated during initial startup
+                  rm -rf "$TARGET_VOLUME_DIR"/*
+                  # Strips components to drop data right at the root of the volume mount
                   tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C "$TARGET_VOLUME_DIR/"
               fi
 
+              # 3. ANTI-CRASH LOOP SHIELD: Force permissions recursively on everything
               echo "Enforcing strict read/write permissions on restored monitoring assets..."
-              # Ensure the whole volume folder structure is accessible
+              chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data
               chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data
-              
-              # Fix the SQLite database permissions explicitly if it extracted successfully
+
               if [ -f "$TARGET_VOLUME_DIR/grafana.db" ]; then
                   chmod 664 "$TARGET_VOLUME_DIR/grafana.db"
+                  chown 472:472 "$TARGET_VOLUME_DIR/grafana.db"
               fi
 
-              # ANTI-CRASH LOOP SHIELD: Force inner Grafana user (UID 472) ownership across the volume tree
-              chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data
+              # 4. Start Grafana back up with your custom DB fully injected
+              docker start grafana || true
               
               echo "=== Provisioning Base Complete ==="
               EOF
