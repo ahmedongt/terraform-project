@@ -187,8 +187,6 @@ resource "aws_instance" "my_web_server" {
               # ---------------------------------------------------------------------
               # ASYNCHRONOUS BACKGROUND PERMISSION WATCHDOG DAEMON WITH IAM RETRIES
               # ---------------------------------------------------------------------
-              # Tunnels into a loop waiting up to 10 minutes for Docker Compose volume 
-              # paths to exist and for the EC2 Instance IAM profile policies to propagate.
               cat << 'SCRIPT' > /usr/local/bin/grafana-volume-heal.sh
               #!/bin/bash
               TARGET_DIR="/var/lib/docker/volumes/terraform-project_grafana_data/_data"
@@ -216,7 +214,15 @@ resource "aws_instance" "my_web_server" {
                               chown 472:472 "$TARGET_DIR/grafana.db"
                           fi
                           
+                          # Bring the container up to register modifications
                           docker start grafana || true
+                          
+                          # FINAL BLOW: Delay 5 seconds, then hard-bounce the container to 
+                          # strip away all plugin/DB memory caches cleanly!
+                          sleep 5
+                          echo "Performing cache clearing double-bounce power cycle..."
+                          docker restart grafana || true
+                          
                           echo "Infrastructure metrics storage state successfully healed!"
                           break
                       else
