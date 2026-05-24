@@ -1,4 +1,4 @@
-# 0. THE DEFINITIONS      
+# 0. THE DEFINITIONS       
 variable "cloudflare_api_token" {}
 variable "cloudflare_zone_id" {}
 variable "user_name" {}
@@ -178,11 +178,19 @@ resource "aws_instance" "my_web_server" {
               useradd -m ssm-user
               usermod -a -G docker ssm-user
               
+              # ---------------------------------------------------------------------
+              # FIX ISSUE #1: Kill Sudo Password Prompt Forever for Interactive Shell
+              # ---------------------------------------------------------------------
+              echo "ssm-user ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ssm-user
+              chmod 0440 /etc/sudoers.d/ssm-user
+              
               mkdir -p /var/www/html
 
-              # --- FIXED PERSISTENT MONITORING DATA RECOVERY ---
-              # Pre-build the named docker volume directory structure matching your compose environment
-              mkdir -p /var/lib/docker/volumes/terraform-project_grafana_data/_data
+              # ---------------------------------------------------------------------
+              # FIX ISSUE #2 & #3: Pre-build volume paths, download backup, and align layout
+              # ---------------------------------------------------------------------
+              TARGET_VOLUME_DIR="/var/lib/docker/volumes/terraform-project_grafana_data/_data"
+              mkdir -p "$TARGET_VOLUME_DIR"
 
               # Copy the valid, data-heavy backup archive from the backups subdirectory
               echo "Pulling down persistent monitoring state archive from S3 backups folder..."
@@ -190,21 +198,22 @@ resource "aws_instance" "my_web_server" {
               
               if [ -f /tmp/monitoring_state.tar.gz ]; then
                   echo "Extracting backup payload directly into named Docker volume storage..."
-                  # Strips the wrapper layer from the archive and extracts contents cleanly into the volume root
-                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=1 -C /var/lib/docker/volumes/terraform-project_grafana_data/_data/
+                  # FIX: --strip-components=2 completely skips the nested "./data/grafana/" parent paths
+                  # wrapped inside your backup tarball, dropping files perfectly into the volume root.
+                  tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C "$TARGET_VOLUME_DIR/"
               fi
 
               echo "Enforcing strict read/write permissions on restored monitoring assets..."
-              # 1. Ensure the volume directory root is completely readable and writable
-              chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data/_data
-
-              # 2. Fix the SQLite database permissions explicitly if it extracted successfully
-              if [ -f /var/lib/docker/volumes/terraform-project_grafana_data/_data/grafana.db ]; then
-                  chmod 664 /var/lib/docker/volumes/terraform-project_grafana_data/_data/grafana.db
+              # Ensure the whole volume folder structure is accessible
+              chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data
+              
+              # Fix the SQLite database permissions explicitly if it extracted successfully
+              if [ -f "$TARGET_VOLUME_DIR/grafana.db" ]; then
+                  chmod 664 "$TARGET_VOLUME_DIR/grafana.db"
               fi
 
-              # 3. ANTI-CRASH LOOP SHIELD: Force inner Grafana user (UID 472) ownership before container spinup
-              chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data
+              # ANTI-CRASH LOOP SHIELD: Force inner Grafana user (UID 472) ownership across the volume tree
+              chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data
               
               echo "=== Provisioning Base Complete ==="
               EOF
