@@ -1,4 +1,6 @@
+# ==========================================
 # 0. THE DEFINITIONS        
+# ==========================================
 variable "cloudflare_api_token" {}
 variable "cloudflare_zone_id" {}
 variable "user_name" {}
@@ -28,6 +30,10 @@ terraform {
       source  = "hashicorp/http"
       version = "~> 3.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
   }
 }
 
@@ -44,13 +50,36 @@ data "http" "cloudflare_ips" {
   url = "https://api.cloudflare.com/client/v4/ips"
 }
 
+# --- DYNAMIC PACKER AMIS DETECTOR ---
+data "aws_ami" "packer_golden_image" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["golden-devops-ami-al2023-*"]
+  }
+
+  filter {
+    name   = "tag:Engine"
+    values = ["Packer"]
+  }
+
+  filter {
+    name   = "tag:Project"
+    values = ["Terraform-Project"]
+  }
+}
+
 locals {
   cloudflare_ipv4   = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
   safe_user_name    = lower(replace(var.user_name, " ", "-"))
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
+# ==========================================
 # 1. THE PERMANENT IP (ELASTIC IP)
+# ==========================================
 resource "aws_eip" "web_eip" {
   instance = aws_instance.my_web_server.id
   domain   = "vpc"
@@ -61,9 +90,10 @@ resource "aws_eip" "web_eip" {
   }
 }
 
-# 2. THE FIREWALL (HARDENED - PORT 22 REMOVED FROM PUBLIC INTERNET)
+# ==========================================
+# 2. THE FIREWALL (HARDENED - NO PUBLIC SSH)
+# ==========================================
 resource "aws_security_group" "web_traffic" {
-  # Switched to name_prefix to avoid duplicate naming deadlocks during creation
   name_prefix = "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
 
@@ -95,19 +125,22 @@ resource "aws_security_group" "web_traffic" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Creates the new security group rules before ripping out the old ones
   lifecycle {
     create_before_destroy = true
   }
 }
 
+# ==========================================
 # 3. THE STORAGE BUCKETS
+# ==========================================
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER POLICIES)
+# ==========================================
+# 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER)
+# ==========================================
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -116,7 +149,6 @@ resource "aws_iam_role" "web_admin_role" {
   })
 }
 
-# Custom Policy for S3 access
 resource "aws_iam_role_policy" "s3_and_ssm_access" {
   name = "s3_and_ssm_access"
   role = aws_iam_role.web_admin_role.id
@@ -138,7 +170,6 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
   })
 }
 
-# Attach Official AWS Systems Manager Policy to allow secure SSH-less connectivity
 resource "aws_iam_role_policy_attachment" "ssm_core_attach" {
   role       = aws_iam_role.web_admin_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
@@ -149,9 +180,11 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (100% FULLY AUTOMATED CONTAINER STACK DEPLOYMENT)
+# ==========================================
+# 5. THE SERVER (ROUTED TO PACKER GOLDEN AMI)
+# ==========================================
 resource "aws_instance" "my_web_server" {
-  ami                         = "ami-022a61cddf3a30415"
+  ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
   vpc_security_group_ids      = [aws_security_group.web_traffic.id]
   iam_instance_profile        = aws_iam_instance_profile.web_instance_profile.name
@@ -161,79 +194,8 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              
-              echo "=== Executing Custom Application Runtime Handlers ==="
-              
-              # 1. Automate Workspace Generation
-              mkdir -p /home/ec2-user/terraform-project
-              cd /home/ec2-user/terraform-project
-
-              # 2. Automate Docker Compose File Creation Hands-Free
-              cat << 'COMPOSE_EOF' > docker-compose.yml
-              services:
-                grafana:
-                  image: grafana/grafana-oss:latest
-                  container_name: grafana
-                  ports:
-                    - "3000:3000"
-                  volumes:
-                    - grafana_data:/var/lib/grafana
-                  restart: unless-stopped
-
-              volumes:
-                grafana_data:
-                  name: terraform-project_grafana_data
-COMPOSE_EOF
-
-              # 3. Fire up the App Architecture instantly on boot
-              docker-compose up -d
-
-              # 4. Drop the Self-Healing Data Restoration Script onto the file system
-              cat << 'SCRIPT' > /usr/local/bin/grafana-volume-heal.sh
-              #!/bin/bash
-              TARGET_DIR="/var/lib/docker/volumes/terraform-project_grafana_data/_data"
-              
-              for i in {1..60}; do
-                  if [ -d "$TARGET_DIR" ]; then
-                      echo "Docker volume storage path located. Attempting secure data state extraction..."
-                      
-                      if aws s3 cp s3://${local.monitoring_bucket}/backups/monitoring_state_2026-05-19_03-00.tar.gz /tmp/monitoring_state.tar.gz; then
-                          echo "Backup metadata tarball downloaded successfully from S3."
-                          
-                          docker stop grafana || true
-                          rm -rf "$TARGET_DIR"/*
-                          tar -xzf /tmp/monitoring_state.tar.gz --strip-components=2 -C "$TARGET_DIR/"
-                          
-                          echo "Enforcing strict user 472 ownership across data tree components..."
-                          chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data
-                          chmod -R 775 /var/lib/docker/volumes/terraform-project_grafana_data
-                          
-                          if [ -f "$TARGET_DIR/grafana.db" ]; then
-                              chmod 664 "$TARGET_DIR/grafana.db"
-                              chown 472:472 "$TARGET_DIR/grafana.db"
-                          fi
-                          
-                          docker start grafana || true
-                          sleep 5
-                          echo "Performing cache clearing double-bounce power cycle..."
-                          docker restart grafana || true
-                          
-                          echo "Infrastructure metrics storage state successfully healed!"
-                          break
-                      else
-                          echo "AWS IAM profile evaluation or networking not ready yet. Retrying in 10 seconds..."
-                      fi
-                  fi
-                  sleep 10
-              done
-SCRIPT
-
-              chmod +x /usr/local/bin/grafana-volume-heal.sh
-              
-              # 5. Launch the background healer thread asynchronously
-              /usr/local/bin/grafana-volume-heal.sh > /var/log/grafana-healer.log 2>&1 &
-              
-              echo "=== Run-time Orchestration Initialization Complete ==="
+              echo "=== Golden Image Deployed Successfully ==="
+              echo "=== Handing Over Configuration Command Controls Directly to Ansible ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
@@ -243,7 +205,9 @@ SCRIPT
   }
 }
 
+# ==========================================
 # 6. THE DNS BRIDGE
+# ==========================================
 resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
@@ -260,7 +224,9 @@ resource "cloudflare_record" "www_dns" {
   proxied = true
 }
 
+# ==========================================
 # 7. OUTPUTS
+# ==========================================
 output "monitoring_bucket_name" {
   value = local.monitoring_bucket
 }
@@ -276,4 +242,16 @@ output "server_ip" {
 output "ec2_instance_id" {
   value       = aws_instance.my_web_server.id
   description = "The target AWS Instance ID for Session Manager mapping"
+}
+
+# ==========================================
+# 8. DYNAMIC INVENTORY GENERATION (LOCAL WORKSPACE RECOVERY)
+# ==========================================
+resource "local_file" "ansible_inventory" {
+  filename        = "${path.module}/ansible/hosts.ini"
+  file_permission = "0644"
+  content         = <<EOT
+[webserver]
+${aws_eip.web_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=Keypairforytthumbnail.pem
+EOT
 }

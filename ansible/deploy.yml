@@ -3,42 +3,49 @@
   hosts: all
   become: yes
   tasks:
-    - name: Ensure project directory exists on EC2
+    - name: Ensure project base directory structure exists
       file:
-        path: /home/ec2-user/terraform-project
+        path: "{{ item }}"
         state: directory
         owner: ec2-user
         group: ec2-user
+        mode: '0755'
+      loop:
+        - /home/ec2-user/terraform-project
+        - /home/ec2-user/terraform-project/data
+        - /home/ec2-user/terraform-project/data/grafana
+        - /home/ec2-user/terraform-project/data/prometheus
 
-    # --- S3 BOOTSTRAP ---
-    - name: Install python3-pip using dnf
-      dnf:
-        name: python3-pip
-        state: present
-
-    # Using pip to install boto3 for S3 modules
-    - name: Install S3 dependencies (boto3) on EC2
+    # --- PIP MODULE READY FOR S3 EXTENSIONS ---
+    # Python3-pip is baked by Packer, we only need to map boto3 dependencies
+    - name: Install S3 interaction dependencies (boto3) via pip
       ansible.builtin.pip:
         name: [boto3, botocore]
         executable: pip3
 
-    # --- S3 RESTORE ---
-    - name: Download state from S3 vault
+    # --- NATIVE S3 RESTORATION ---
+    - name: Download latest master state snapshot from S3 vault
       amazon.aws.s3_object:
         bucket: monitoring-configs-and-stats-kali
         object: monitoring_state.tar.gz
-        dest: /home/ec2-user/terraform-project/monitoring_state.tar.gz
+        dest: /tmp/monitoring_state.tar.gz
         mode: get
       ignore_errors: yes
       register: s3_download
 
-    - name: Extract monitoring state
+    - name: Extract monitoring state onto host path
       ansible.builtin.unarchive:
-        src: /home/ec2-user/terraform-project/monitoring_state.tar.gz
+        src: /tmp/monitoring_state.tar.gz
         dest: /home/ec2-user/terraform-project/
         remote_src: yes
         owner: ec2-user
         group: ec2-user
+      when: s3_download is succeeded
+
+    - name: Clean up temporary download artifacts
+      file:
+        path: /tmp/monitoring_state.tar.gz
+        state: absent
       when: s3_download is succeeded
 
     # --- PERMISSION GUARD ---
@@ -60,8 +67,8 @@
         mode: '0775'
         recurse: yes
 
-    # --- CONFIGURATION ---
-    - name: Copy project files to EC2
+    # --- CONFIGURATION LINKING ---
+    - name: Copy project runtime configuration blueprints to EC2
       copy:
         src: "../{{ item }}"
         dest: /home/ec2-user/terraform-project/
@@ -69,47 +76,8 @@
         group: ec2-user
       loop: [docker-compose.yml, api, website, default.conf, prometheus.yml]
 
-    # --- DOCKER SETUP ---
-    - name: Clean DNF cache
-      command: dnf clean all
-
-    - name: Install Docker Engine
-      dnf: { name: docker, state: present }
-
-    - name: Ensure Docker Service is started
-      systemd: { name: docker, state: started, enabled: yes }
-
-    - name: Create Docker CLI plugins directory
-      file:
-        path: /usr/local/lib/docker/cli-plugins
-        state: directory
-        mode: '0755'
-
-    - name: Download Docker Compose Plugin
-      get_url:
-        url: "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ ansible_facts['architecture'] }}"
-        dest: /usr/local/lib/docker/cli-plugins/docker-compose
-        mode: '0755'
-
-    - name: Download Docker Buildx Plugin
-      get_url:
-        url: "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"
-        dest: /usr/local/lib/docker/cli-plugins/docker-buildx
-        mode: '0755'
-
-    # --- AUTOMATED BACKUP SETUP ---
-    - name: Install cronie (provides crontab)
-      dnf:
-        name: cronie
-        state: present
-
-    - name: Ensure crond is started and enabled
-      systemd:
-        name: crond
-        state: started
-        enabled: yes
-
-    - name: Create the backup script on EC2
+    # --- AUTOMATED BACKUP CRON JOB ---
+    - name: Create the persistent structural backup script on EC2
       copy:
         dest: /home/ec2-user/backup_monitoring.sh
         mode: '0755'
@@ -120,13 +88,17 @@
           TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
           PROJECT_DIR="/home/ec2-user/terraform-project"
           BUCKET="monitoring-configs-and-stats-kali"
-          # Package the current data using sudo for restricted files
-          sudo tar -czvf /tmp/monitoring_state.tar.gz -C $PROJECT_DIR ./data/
-          # Update the Master Copy for CI/CD
+          
+          # Package data files using elevated path access
+          sudo tar -czf /tmp/monitoring_state.tar.gz -C $PROJECT_DIR ./data/
+          
+          # Maintain master state pointer for rapid pipeline recovery
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
-          # Keep a timestamped version for 30-day history
+          
+          # Retain long-term 30-day historical ledger traces
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
-          # Cleanup using sudo -f to prevent interactive prompts
+          
+          # Cleanup working artifacts safely
           sudo rm -f /tmp/monitoring_state.tar.gz
 
     - name: Schedule the Backup Cron Job (Every night at 3 AM)
@@ -137,11 +109,11 @@
         user: ec2-user
         job: "/home/ec2-user/backup_monitoring.sh > /dev/null 2>&1"
 
-    # --- DEPLOYMENT ---
-    - name: Force remove any conflicting containers
+    # --- DETERMINISTIC CONTAINER ORCHESTRATION ---
+    - name: Terminate conflicting containers to avoid routing state collisions
       shell: "docker rm -f backend frontend prometheus grafana || true"
 
-    - name: Deploy fresh containers
+    - name: Deploy fresh service containers
       community.docker.docker_compose_v2:
         project_src: /home/ec2-user/terraform-project
         state: present
