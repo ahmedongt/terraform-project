@@ -129,9 +129,9 @@
     - name: Deploy fresh service containers via Compose Engine
       shell: |
         if command -v docker-compose &> /dev/null; then
-          docker-compose up -d --build --force-recreate
+          docker-compose up -d --no-build --force-recreate
         else
-          docker compose up -d --build --force-recreate
+          docker compose up -d --no-build --force-recreate
         fi
       args:
         chdir: /home/ec2-user/terraform-project
