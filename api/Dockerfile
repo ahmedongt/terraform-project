@@ -12,7 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. Copy requirements (Read-only for Sonar compliance)
-COPY --chown=user-1:user-1 --chmod=444 requirements.txt .
+# FIX: Split --chmod out to remain compatible with legacy Docker engines
+COPY --chown=user-1:user-1 requirements.txt .
+USER root
+RUN chmod 444 requirements.txt
 
 # 4. Security environment variables
 ENV PIP_NO_CACHE_DIR=1
@@ -30,7 +33,10 @@ RUN mkdir -p /app/downloads /app/static && \
     chmod -R 755 /app/downloads /app/static
 
 # 7. Copy app code as READ-ONLY (Fixes "Make sure no write permissions are assigned")
-COPY --chown=user-1:user-1 --chmod=444 app.py .
+# FIX: Split --chmod out here as well to protect the legacy build engine
+COPY --chown=user-1:user-1 app.py .
+USER root
+RUN chmod 444 app.py
 
 # 8. Final switch to non-root user
 USER user-1
