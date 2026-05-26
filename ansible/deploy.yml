@@ -16,8 +16,14 @@
         - /home/ec2-user/terraform-project/data/grafana
         - /home/ec2-user/terraform-project/data/prometheus
 
+    # --- SYSTEM PACKAGE INSTALLS ---
+    - name: Ensure python3-pip is installed on target host
+      ansible.builtin.dnf:
+        name: python3-pip
+        state: present
+
     # --- PIP MODULE READY FOR S3 EXTENSIONS ---
-    # Python3-pip is baked by Packer, we only need to map boto3 dependencies
+    # Python3-pip package installation handled above to ensure global binary paths resolve cleanly
     - name: Install S3 interaction dependencies (boto3) via pip
       ansible.builtin.pip:
         name: [boto3, botocore]
