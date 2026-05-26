@@ -17,13 +17,20 @@
         - /home/ec2-user/terraform-project/data/prometheus
 
     # --- SYSTEM PACKAGE INSTALLS ---
-    - name: Ensure python3-pip is installed on target host
+    - name: Ensure Python system essentials are present
       ansible.builtin.dnf:
-        name: python3-pip
+        name: 
+          - python3-pip
+          - cronie
         state: present
 
+    - name: Ensure cron service is started and enabled
+      ansible.builtin.systemd:
+        name: crond
+        state: started
+        enabled: yes
+
     # --- PIP MODULE READY FOR S3 EXTENSIONS ---
-    # Python3-pip package installation handled above to ensure global binary paths resolve cleanly
     - name: Install S3 interaction dependencies (boto3) via pip
       ansible.builtin.pip:
         name: [boto3, botocore]
