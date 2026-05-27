@@ -44,7 +44,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus              # <-- Changed to Named Volume
+      - ./data/prometheus:/prometheus              # <-- Changed to Host Directory Path
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=15d'
@@ -63,11 +63,6 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin 
     volumes:
-      - grafana_data:/var/lib/grafana            # <-- Changed to Named Volume
+      - ./data/grafana:/var/lib/grafana            # <-- Changed to Host Directory Path
     depends_on:
       - prometheus
-
-# Declaration of managed named volumes
-volumes:
-  prometheus_data:
-  grafana_data:
