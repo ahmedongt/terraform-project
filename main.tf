@@ -1,6 +1,7 @@
 # ==========================================
-# 0. THE DEFINITIONS        
+# FILE: main.tf (Modernized Platform Configuration)
 # ==========================================
+
 variable "cloudflare_api_token" {}
 variable "cloudflare_zone_id" {}
 variable "user_name" {}
@@ -13,7 +14,7 @@ terraform {
     key            = "state/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "kali-terraform-state-locks" # Links your permanent locking table!
+    dynamodb_table = "kali-terraform-state-locks" 
     use_lockfile   = true 
   }
 
@@ -29,10 +30,6 @@ terraform {
     http = {
       source  = "hashicorp/http"
       version = "~> 3.0"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.0"
     }
   }
 }
@@ -50,49 +47,23 @@ data "http" "cloudflare_ips" {
   url = "https://api.cloudflare.com/client/v4/ips"
 }
 
-# --- DYNAMIC PACKER AMIS DETECTOR ---
-data "aws_ami" "packer_golden_image" {
-  most_recent = true
-  owners      = ["self"]
-
-  filter {
-    name   = "name"
-    values = ["golden-devops-ami-al2023-*"]
-  }
-
-  filter {
-    name   = "tag:Engine"
-    values = ["Packer"]
-  }
-
-  filter {
-    name   = "tag:Project"
-    values = ["Terraform-Project"]
-  }
-}
-
 locals {
   cloudflare_ipv4   = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
   safe_user_name    = lower(replace(var.user_name, " ", "-"))
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
-# ==========================================
 # 1. THE PERMANENT IP (ELASTIC IP)
-# ==========================================
 resource "aws_eip" "web_eip" {
   instance = aws_instance.my_web_server.id
   domain   = "vpc"
 
-  # Prevents EIP from blocking the instance recreation lifecycle
   lifecycle {
     create_before_destroy = true
   }
 }
 
-# ==========================================
-# 2. THE FIREWALL (HARDENED - NO PUBLIC SSH)
-# ==========================================
+# 2. THE FIREWALL (PORT 22 STRIPPED FOR SSM SECURE PROXY)
 resource "aws_security_group" "web_traffic" {
   name_prefix = "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
@@ -130,17 +101,13 @@ resource "aws_security_group" "web_traffic" {
   }
 }
 
-# ==========================================
 # 3. THE STORAGE BUCKETS
-# ==========================================
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# ==========================================
-# 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER)
-# ==========================================
+# 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER POLICIES)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -180,22 +147,23 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# ==========================================
-# 5. THE SERVER (ROUTED TO PACKER GOLDEN AMI)
-# ==========================================
+# 5. THE SERVER (CLEAN BASE FOR ANSIBLE ORCHESTRATION)
 resource "aws_instance" "my_web_server" {
-  ami                         = data.aws_ami.packer_golden_image.id
+  ami                         = "ami-022a61cddf3a30415"
   instance_type               = var.instance_type
   vpc_security_group_ids      = [aws_security_group.web_traffic.id]
   iam_instance_profile        = aws_iam_instance_profile.web_instance_profile.name
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
+  # Clean workspace initialization without hardcoded container locks
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              echo "=== Golden Image Deployed Successfully ==="
-              echo "=== Handing Over Configuration Command Controls Directly to Ansible ==="
+              echo "=== Initializing Workspace Environment ==="
+              mkdir -p /home/ec2-user/terraform-project
+              chown -R ec2-user:ec2-user /home/ec2-user/terraform-project
+              echo "=== Workspace Ready for Ansible Configuration ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
@@ -205,9 +173,7 @@ resource "aws_instance" "my_web_server" {
   }
 }
 
-# ==========================================
 # 6. THE DNS BRIDGE
-# ==========================================
 resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
@@ -224,9 +190,7 @@ resource "cloudflare_record" "www_dns" {
   proxied = true
 }
 
-# ==========================================
 # 7. OUTPUTS
-# ==========================================
 output "monitoring_bucket_name" {
   value = local.monitoring_bucket
 }
@@ -242,16 +206,4 @@ output "server_ip" {
 output "ec2_instance_id" {
   value       = aws_instance.my_web_server.id
   description = "The target AWS Instance ID for Session Manager mapping"
-}
-
-# ==========================================
-# 8. DYNAMIC INVENTORY GENERATION (LOCAL WORKSPACE RECOVERY)
-# ==========================================
-resource "local_file" "ansible_inventory" {
-  filename        = "${path.module}/ansible/hosts.ini"
-  file_permission = "0644"
-  content         = <<EOT
-[webserver]
-${aws_eip.web_eip.public_ip} ansible_user=ec2-user ansible_ssh_private_key_file=Keypairforytthumbnail.pem
-EOT
 }
