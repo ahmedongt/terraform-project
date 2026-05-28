@@ -2,6 +2,7 @@
 - name: Deploy YT Thumbnail App with Monitoring
   hosts: all
   become: yes
+  gather_facts: false # <-- CRITICAL SPEED BOOST: Skip slow hardware metric scans over SSM tunnel
   tasks:
     - name: Ensure project base directory structure exists
       file:
@@ -16,7 +17,7 @@
         - /home/ec2-user/terraform-project/data/grafana
         - /home/ec2-user/terraform-project/data/prometheus
 
-    # --- SYSTEM PACKAGE INSTALLS ---
+    # --- SYSTEM PACKAGE INSTALLS (Kept safely because they are missing from Packer AMI) ---
     - name: Ensure Python system essentials are present
       ansible.builtin.dnf:
         name: 
@@ -126,14 +127,9 @@
     - name: Terminate conflicting containers to avoid routing state collisions
       shell: "docker rm -f backend frontend prometheus grafana || true"
 
-    - name: Deploy fresh service containers via Compose Engine
-      shell: |
-        export DOCKER_BUILDKIT=0
-        export COMPOSE_DOCKER_CLI_BUILD=0
-        if command -v docker-compose &> /dev/null; then
-          docker-compose up -d --build --force-recreate
-        else
-          docker compose up -d --build --force-recreate
-        fi
-      args:
-        chdir: /home/ec2-user/terraform-project
+    - name: Deploy fresh service containers via Native Compose Engine
+      community.docker.docker_compose_v2:
+        project_src: /home/ec2-user/terraform-project
+        state: present
+        build: always
+        recreate: always
