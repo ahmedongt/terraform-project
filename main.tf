@@ -47,6 +47,17 @@ data "http" "cloudflare_ips" {
   url = "https://api.cloudflare.com/client/v4/ips"
 }
 
+# --- DYNAMICALLY LOCATE THE LATEST PACKER GOLDEN IMAGE ---
+data "aws_ami" "packer_golden_image" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["golden-devops-ami-al2023-*"]
+  }
+}
+
 locals {
   cloudflare_ipv4   = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
   safe_user_name    = lower(replace(var.user_name, " ", "-"))
@@ -147,9 +158,9 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (CLEAN BASE FOR ANSIBLE ORCHESTRATION)
+# 5. THE SERVER (NOW BACKED BY PRE-BAKED IMMUTABLE INFRASTRUCTURE)
 resource "aws_instance" "my_web_server" {
-  ami                         = "ami-022a61cddf3a30415"
+  ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
   vpc_security_group_ids      = [aws_security_group.web_traffic.id]
   iam_instance_profile        = aws_iam_instance_profile.web_instance_profile.name
