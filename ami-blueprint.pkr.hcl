@@ -29,8 +29,15 @@ build {
     inline = [
       "echo '=== Beginning Image Baking Process ==='",
       "sudo dnf update -y",
-      "sudo dnf install -y docker aws-cli",
+      
+      # PRE-INSTALL SYSTEM DEPENDENCIES: Shifting the CPU execution time onto Packer
+      "sudo dnf install -y docker aws-cli python3-pip cronie",
       "sudo systemctl enable docker",
+      "sudo systemctl enable crond",
+      
+      # PRE-INSTALL PIP UTILITIES: Baking boto3 right into the base OS filesystem
+      "sudo pip3 install boto3 botocore",
+      
       "sudo curl -L 'https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64' -o /usr/local/bin/docker-compose",
       "sudo chmod +x /usr/local/bin/docker-compose",
       "sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose",
@@ -39,10 +46,7 @@ build {
       "sudo usermod -a -G docker ssm-user",
       "echo 'ssm-user ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ssm-user",
       "sudo chmod 0440 /etc/sudoers.d/ssm-user",
-      
-      # FIX: Disables requiretty constraint so Ansible can pipe memory-mapped modules via sudo over SSM
       "echo 'Defaults !requiretty' | sudo tee -a /etc/sudoers",
-      
       "echo '=== Image Baking Complete! ==='"
     ]
   }

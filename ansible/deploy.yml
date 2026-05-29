@@ -26,25 +26,12 @@
         - /home/ec2-user/terraform-project/data/grafana
         - /home/ec2-user/terraform-project/data/prometheus
 
-    # --- SYSTEM PACKAGE INSTALLS ---
-    - name: Ensure Python system essentials are present
-      ansible.builtin.dnf:
-        name: 
-          - python3-pip
-          - cronie
-        state: present
-
-    - name: Ensure cron service is started and enabled
+    # --- VERIFY PRE-BAKED SERVICES ---
+    - name: Ensure pre-baked cron service is running and enabled
       ansible.builtin.systemd:
         name: crond
         state: started
         enabled: yes
-
-    # --- PIP MODULE READY FOR S3 EXTENSIONS ---
-    - name: Install S3 interaction dependencies (boto3) via pip
-      ansible.builtin.pip:
-        name: [boto3, botocore]
-        executable: pip3
 
     # --- NATIVE S3 RESTORATION ---
     - name: Download latest master state snapshot from S3 vault
