@@ -2,15 +2,14 @@
 - name: Deploy YT Thumbnail App with Monitoring
   hosts: all
   become: yes
-  gather_facts: false # <-- Skips hardware metric scans instantly
-  
-  # BULLETPROOF PIPELINING OVERRIDES: Forces high-speed memory streaming even on cold builds
+  gather_facts: false
+
   vars:
     ansible_ssh_pipelining: true
     ansible_host_key_checking: false
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     ansible_ssh_extra_args: "-o ControlMaster=auto -o ControlPersist=120s"
-    ansible_scp_if_ssh: false # <-- CRITICAL: Strict block to prevent dropping back to slow copy modes
+    ansible_scp_if_ssh: false
 
   tasks:
     - name: Ensure project base directory structure exists
@@ -26,19 +25,31 @@
         - /home/ec2-user/terraform-project/data/grafana
         - /home/ec2-user/terraform-project/data/prometheus
 
-    # --- VERIFY CRON SERVICE ---
-    - name: Check if cron service is present on the host system
-      ansible.builtin.command: systemctl list-unit-files crond.service
-      register: cron_check
-      changed_when: false
-      failed_when: false
+    # --- AUTOMATIC SYSTEM ENVIRONMENT REPAIR ---
+    - name: Verify baseline system operational dependencies
+      ansible.builtin.dnf:
+        name:
+          - cronie
+          - python3-pip
+        state: present
 
-    - name: Ensure cron service is running and enabled
+    - name: Ensure cron service infrastructure is running
       ansible.builtin.systemd:
         name: crond
         state: started
         enabled: yes
-      when: "'crond.service' in cron_check.stdout or cron_check.rc == 0"
+
+    - name: Check if S3 Python bindings are natively operational
+      ansible.builtin.command: python3 -c "import boto3, botocore"
+      register: boto_check
+      changed_when: false
+      failed_when: false
+
+    - name: Force inject Python cloud dependencies if missing
+      ansible.builtin.pip:
+        name: [boto3, botocore]
+        executable: pip3
+      when: boto_check.rc != 0
 
     # --- NATIVE S3 RESTORATION ---
     - name: Download latest master state snapshot from S3 vault
@@ -105,17 +116,9 @@
           TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
           PROJECT_DIR="/home/ec2-user/terraform-project"
           BUCKET="monitoring-configs-and-stats-kali"
-          
-          # Package data files using elevated path access
           sudo tar -czf /tmp/monitoring_state.tar.gz -C $PROJECT_DIR ./data/
-          
-          # Maintain master state pointer for rapid pipeline recovery
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
-          
-          # Retain long-term 30-day historical ledger traces
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
-          
-          # Cleanup working artifacts safely
           sudo rm -f /tmp/monitoring_state.tar.gz
 
     - name: Schedule the Backup Cron Job (Every night at 3 AM)
