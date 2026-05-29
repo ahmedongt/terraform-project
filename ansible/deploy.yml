@@ -2,7 +2,14 @@
 - name: Deploy YT Thumbnail App with Monitoring
   hosts: all
   become: yes
-  gather_facts: false # <-- CRITICAL SPEED BOOST: Skip slow hardware metric scans over SSM tunnel
+  gather_facts: false # <-- Skips hardware metric scans instantly
+  
+  # FORCE OPTIMIZATION: Bypasses external ansible.cfg detection entirely
+  vars:
+    ansible_ssh_pipelining: true
+    ansible_ssh_extra_args: "-o ControlMaster=auto -o ControlPersist=120s -o StrictHostKeyChecking=no"
+    ansible_scp_if_ssh: true
+
   tasks:
     - name: Ensure project base directory structure exists
       file:
@@ -17,7 +24,7 @@
         - /home/ec2-user/terraform-project/data/grafana
         - /home/ec2-user/terraform-project/data/prometheus
 
-    # --- SYSTEM PACKAGE INSTALLS (Kept safely because they are missing from Packer AMI) ---
+    # --- SYSTEM PACKAGE INSTALLS ---
     - name: Ensure Python system essentials are present
       ansible.builtin.dnf:
         name: 
@@ -132,5 +139,5 @@
       args:
         chdir: /home/ec2-user/terraform-project
       environment:
-        DOCKER_BUILDKIT: "0"             # <-- FIX: Forces classic stable docker compiler build engine
-        COMPOSE_DOCKER_CLI_BUILD: "0"    # <-- FIX: Bypasses buildx dependency error strings
+        DOCKER_BUILDKIT: "0"
+        COMPOSE_DOCKER_CLI_BUILD: "0"
