@@ -131,3 +131,6 @@
       shell: "/usr/bin/docker-compose up -d --build --force-recreate"
       args:
         chdir: /home/ec2-user/terraform-project
+      environment:
+        DOCKER_BUILDKIT: "0"             # <-- FIX: Forces classic stable docker compiler build engine
+        COMPOSE_DOCKER_CLI_BUILD: "0"    # <-- FIX: Bypasses buildx dependency error strings
