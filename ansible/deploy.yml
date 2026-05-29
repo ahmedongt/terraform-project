@@ -127,10 +127,7 @@
     - name: Terminate conflicting containers to avoid routing state collisions
       shell: "docker rm -f backend frontend prometheus grafana || true"
 
-    - name: Deploy fresh service containers via Native Compose Engine
-      community.docker.docker_compose_v2:
-        project_src: /home/ec2-user/terraform-project
-        state: present
-        build: always
-        recreate: always
-        docker_cli: /usr/bin/docker-compose # <-- FIX: Correct module parameter name to locate custom binary path
+    - name: Deploy fresh service containers via Standalone Compose Engine
+      shell: "/usr/bin/docker-compose up -d --build --force-recreate"
+      args:
+        chdir: /home/ec2-user/terraform-project
