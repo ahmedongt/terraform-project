@@ -39,6 +39,10 @@ build {
       "sudo usermod -a -G docker ssm-user",
       "echo 'ssm-user ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ssm-user",
       "sudo chmod 0440 /etc/sudoers.d/ssm-user",
+      
+      # FIX: Disables requiretty constraint so Ansible can pipe memory-mapped modules via sudo over SSM
+      "echo 'Defaults !requiretty' | sudo tee -a /etc/sudoers",
+      
       "echo '=== Image Baking Complete! ==='"
     ]
   }
