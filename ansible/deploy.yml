@@ -133,4 +133,4 @@
         state: present
         build: always
         recreate: always
-        cli_path: /usr/bin/docker-compose # <-- FIXED: Explicitly redirects module to pre-baked Packer binary
+        docker_cli: /usr/bin/docker-compose # <-- FIX: Correct module parameter name to locate custom binary path
