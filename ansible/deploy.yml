@@ -26,39 +26,19 @@
         - /home/ec2-user/terraform-project/data/grafana
         - /home/ec2-user/terraform-project/data/prometheus
 
-    # --- SELF-HEALING CRON DEPENDENCY CHECK ---
+    # --- VERIFY CRON SERVICE ---
     - name: Check if cron service is present on the host system
       ansible.builtin.command: systemctl list-unit-files crond.service
       register: cron_check
       changed_when: false
       failed_when: false
 
-    - name: Dynamically patch cronie if AMI baking sequence was bypassed
-      ansible.builtin.dnf:
-        name: 
-          - python3-pip
-          - cronie
-        state: present
-      when: "'0 unit files listed' in cron_check.stdout or cron_check.rc != 0"
-
     - name: Ensure cron service is running and enabled
       ansible.builtin.systemd:
         name: crond
         state: started
         enabled: yes
-
-    # --- SELF-HEALING PYTHON/S3 DEPENDENCY CHECK ---
-    - name: Check if boto3 core modules are present in environment
-      ansible.builtin.command: python3 -c "import boto3, botocore"
-      register: python_boto_check
-      changed_when: false
-      failed_when: false
-
-    - name: Dynamically patch missing S3 core components if image fallback occurred
-      ansible.builtin.pip:
-        name: [boto3, botocore]
-        executable: pip3
-      when: python_boto_check.rc != 0
+      when: "'crond.service' in cron_check.stdout or cron_check.rc == 0"
 
     # --- NATIVE S3 RESTORATION ---
     - name: Download latest master state snapshot from S3 vault
