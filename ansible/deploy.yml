@@ -48,7 +48,7 @@
         executable: pip3
       when: boto_check.rc != 0
 
-    # --- NATIVE S3 RESTORATION ---
+    # --- NATIVE S3 RESTORATION (PRE-CREATING VOLUMES) ---
     - name: Download latest master state snapshot from S3 vault
       amazon.aws.s3_object:
         bucket: monitoring-configs-and-stats-kali
@@ -58,13 +58,21 @@
       ignore_errors: yes
       register: s3_download
 
-    - name: Extract monitoring state onto host path
+    - name: Pre-create Docker named volume directories
+      file:
+        path: "/var/lib/docker/volumes/{{ item }}/_data"
+        state: directory
+        mode: '0775'
+      loop:
+        - prometheus_data
+        - grafana_data
+      when: s3_download is succeeded
+
+    - name: Extract monitoring state directly into Docker Named Volumes
       ansible.builtin.unarchive:
         src: /tmp/monitoring_state.tar.gz
-        dest: /home/ec2-user/terraform-project/
+        dest: /var/lib/docker/volumes/
         remote_src: yes
-        owner: ec2-user
-        group: ec2-user
       when: s3_download is succeeded
 
     - name: Clean up temporary download artifacts
