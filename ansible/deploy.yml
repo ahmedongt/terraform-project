@@ -21,9 +21,6 @@
         mode: '0755'
       loop:
         - /home/ec2-user/terraform-project
-        - /home/ec2-user/terraform-project/data
-        - /home/ec2-user/terraform-project/data/grafana
-        - /home/ec2-user/terraform-project/data/prometheus
 
     # --- AUTOMATIC SYSTEM ENVIRONMENT REPAIR ---
     - name: Verify baseline system operational dependencies
@@ -76,25 +73,6 @@
         state: absent
       when: s3_download is succeeded
 
-    # --- PERMISSION GUARD ---
-    - name: Force Grafana ownership and permissions (User 472)
-      file:
-        path: /home/ec2-user/terraform-project/data/grafana
-        state: directory
-        owner: '472'
-        group: '472'
-        mode: '0775'
-        recurse: yes
-
-    - name: Force Prometheus ownership and permissions (User 65534)
-      file:
-        path: /home/ec2-user/terraform-project/data/prometheus
-        state: directory
-        owner: '65534'
-        group: '65534'
-        mode: '0775'
-        recurse: yes
-
     # --- CONFIGURATION LINKING ---
     - name: Copy project runtime configuration blueprints to EC2
       copy:
@@ -114,9 +92,11 @@
         content: |
           #!/bin/bash
           TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
-          PROJECT_DIR="/home/ec2-user/terraform-project"
           BUCKET="monitoring-configs-and-stats-kali"
-          sudo tar -czf /tmp/monitoring_state.tar.gz -C $PROJECT_DIR ./data/
+          
+          # Cleanly backup Docker volumes directly from the source engine data paths
+          sudo tar -czf /tmp/monitoring_state.tar.gz -C /var/lib/docker/volumes/ ./prometheus_data ./grafana_data
+          
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
           sudo rm -f /tmp/monitoring_state.tar.gz
