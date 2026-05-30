@@ -7,6 +7,10 @@ on:
       - main
       - feature/docker-migration
       - feature/aws-ssm-migration
+    # SMARTEST PATH ROUTING: Ensures background steps evaluate code spaces selectively
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
   pull_request:
     branches:
       - master
@@ -16,12 +20,29 @@ jobs:
   packer:
     name: "Packer Image Baking"
     runs-on: ubuntu-latest
+    # SPEED OPTIMIZATION: Only boot the heavy 6-minute engine if the core system blueprints actually change!
+    outputs:
+      packer_ran: ${{ steps.check_changes.outputs.PACKER_RAN }}
     if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetches current and previous commit to accurately trace file diff mechanics
+
+      - name: Check for Core Blueprint System Modifications
+        id: check_changes
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -q "ami-blueprint.pkr.hcl"; then
+            echo "PACKER_RAN=true" >> $GITHUB_OUTPUT
+            echo "AMI system change detected. Proceeding with active image baking track."
+          else
+            echo "PACKER_RAN=false" >> $GITHUB_OUTPUT
+            echo "No image modifications found. Short-circuiting execution to speed track."
+          fi
 
       - name: Configure AWS Credentials
+        if: steps.check_changes.outputs.PACKER_RAN == 'true'
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -29,21 +50,28 @@ jobs:
           aws-region: "us-east-1"
 
       - name: Setup Packer Engine
+        if: steps.check_changes.outputs.PACKER_RAN == 'true'
         uses: hashicorp/setup-packer@main
         with:
           version: "latest"
 
       - name: Initialize Packer Dependencies
+        if: steps.check_changes.outputs.PACKER_RAN == 'true'
         run: packer init ami-blueprint.pkr.hcl
 
       - name: Bake Golden DevOps Base Image
+        if: steps.check_changes.outputs.PACKER_RAN == 'true'
         run: packer build -color=false -on-error=cleanup ami-blueprint.pkr.hcl
 
   terraform:
     name: "Terraform & Ansible Deploy"
     runs-on: ubuntu-latest
-    needs: packer # <-- CRITICAL: Forces Terraform to wait until Packer finishes baking the fresh AMI
-    if: always() && (needs.packer.result == 'success' || github.event_name == 'pull_request' || (github.ref != 'refs/heads/master' && github.ref != 'refs/heads/main'))
+    needs: packer
+    # THE SECRET SAUCE: Allows execution to proceed whether Packer ran successfully or was skipped entirely
+    if: |
+      always() && 
+      (needs.packer.result == 'success' || needs.packer.result == 'skipped') && 
+      (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     
     steps:
       # 1. CHECKOUT CODE
