@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   # Python API (Backend)
   backend:
@@ -44,7 +46,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./data/prometheus:/prometheus              # <-- Changed to Host Directory Path
+      - prometheus_data:/prometheus              # <-- Switched to safe Named Volume
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=15d'
@@ -63,6 +65,11 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin 
     volumes:
-      - ./data/grafana:/var/lib/grafana            # <-- Changed to Host Directory Path
+      - grafana_data:/var/lib/grafana            # <-- Switched to safe Named Volume
     depends_on:
       - prometheus
+
+# Declaring the named volumes managed securely by the Docker Engine
+volumes:
+  prometheus_data:
+  grafana_data:
