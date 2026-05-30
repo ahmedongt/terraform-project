@@ -48,7 +48,7 @@
         executable: pip3
       when: boto_check.rc != 0
 
-    # --- NATIVE S3 RESTORATION (PRE-CREATING VOLUMES) ---
+    # --- NATIVE S3 RESTORATION ---
     - name: Download latest master state snapshot from S3 vault
       amazon.aws.s3_object:
         bucket: monitoring-configs-and-stats-kali
@@ -58,9 +58,9 @@
       ignore_errors: yes
       register: s3_download
 
-    - name: Pre-create Docker named volume directories
+    - name: Pre-create Docker named volume storage engines
       file:
-        path: "/var/lib/docker/volumes/{{ item }}/_data"
+        path: "/var/lib/docker/volumes/terraform-project_{{ item }}/_data"
         state: directory
         mode: '0775'
       loop:
@@ -68,17 +68,33 @@
         - grafana_data
       when: s3_download is succeeded
 
-    - name: Extract monitoring state directly into Docker Named Volumes
+    - name: Isolate extraction workspace
+      file:
+        path: /tmp/monitoring_restore
+        state: absent
+
+    - name: Extract monitoring archives to swap directory
       ansible.builtin.unarchive:
         src: /tmp/monitoring_state.tar.gz
-        dest: /var/lib/docker/volumes/
+        dest: /tmp/
         remote_src: yes
       when: s3_download is succeeded
 
-    - name: Clean up temporary download artifacts
+    - name: Align and map S3 historical records directly into Docker Engine
+      shell: |
+        cp -r /tmp/data/prometheus/* /var/lib/docker/volumes/terraform-project_prometheus_data/_data/ || true
+        cp -r /tmp/data/grafana/* /var/lib/docker/volumes/terraform-project_grafana_data/_data/ || true
+        chown -R 65534:65534 /var/lib/docker/volumes/terraform-project_prometheus_data/_data/
+        chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data/
+      when: s3_download is succeeded
+
+    - name: Purge temporary unpacking artifacts
       file:
-        path: /tmp/monitoring_state.tar.gz
+        path: "{{ item }}"
         state: absent
+      loop:
+        - /tmp/monitoring_state.tar.gz
+        - /tmp/data
       when: s3_download is succeeded
 
     # --- CONFIGURATION LINKING ---
@@ -101,10 +117,7 @@
           #!/bin/bash
           TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
           BUCKET="monitoring-configs-and-stats-kali"
-          
-          # Cleanly backup Docker volumes directly from the source engine data paths
-          sudo tar -czf /tmp/monitoring_state.tar.gz -C /var/lib/docker/volumes/ ./prometheus_data ./grafana_data
-          
+          sudo tar -czf /tmp/monitoring_state.tar.gz -C /var/lib/docker/volumes/ ./terraform-project_prometheus_data ./terraform-project_grafana_data
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
           sudo rm -f /tmp/monitoring_state.tar.gz
