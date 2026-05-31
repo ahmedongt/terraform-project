@@ -90,6 +90,10 @@
         if [ -d "/tmp/data/prometheus" ]; then cp -r /tmp/data/prometheus/* /var/lib/docker/volumes/terraform-project_prometheus_data/_data/; fi
         if [ -d "/tmp/data/grafana" ]; then cp -r /tmp/data/grafana/* /var/lib/docker/volumes/terraform-project_grafana_data/_data/; fi
         
+        # Fix the strict database locked issue by opening read/write permissions
+        chmod -R 777 /var/lib/docker/volumes/terraform-project_prometheus_data/_data/
+        chmod -R 777 /var/lib/docker/volumes/terraform-project_grafana_data/_data/
+        
         # Apply deterministic UID ownership configurations
         chown -R 65534:65534 /var/lib/docker/volumes/terraform-project_prometheus_data/_data/
         chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data/
