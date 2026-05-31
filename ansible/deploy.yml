@@ -1,3 +1,4 @@
+@'
 ---
 - name: Deploy YT Thumbnail App with Stateless Monitoring
   hosts: all
@@ -44,3 +45,4 @@
       environment:
         DOCKER_BUILDKIT: "0"
         COMPOSE_DOCKER_CLI_BUILD: "0"
+'@ | Out-File -Encoding utf8 .\ansible\deploy.yml
