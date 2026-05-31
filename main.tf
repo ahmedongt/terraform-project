@@ -118,6 +118,12 @@ resource "aws_s3_bucket" "website_bucket" {
   force_destroy = true
 }
 
+# PERSISTENT STORAGE LOCK (Survives infrastructure destruction loops)
+resource "aws_s3_bucket" "monitoring_storage" {
+  bucket        = local.monitoring_bucket
+  force_destroy = false # Protects metric records from dropping during terraform destroy
+}
+
 # 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER POLICIES)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
@@ -140,8 +146,8 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
         Resource = [
           "${aws_s3_bucket.website_bucket.arn}", 
           "${aws_s3_bucket.website_bucket.arn}/*",
-          "arn:aws:s3:::${local.monitoring_bucket}",
-          "arn:aws:s3:::${local.monitoring_bucket}/*"
+          "${aws_s3_bucket.monitoring_storage.arn}",
+          "${aws_s3_bucket.monitoring_storage.arn}/*"
         ]
       }
     ]
@@ -167,14 +173,25 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  # Clean workspace initialization without hardcoded container locks
+  # FULLY AUTOMATED CLOUD BOOTSTRAP PIPELINE
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              echo "=== Initializing Workspace Environment ==="
-              mkdir -p /home/ec2-user/terraform-project
-              chown -R ec2-user:ec2-user /home/ec2-user/terraform-project
-              echo "=== Workspace Ready for Ansible Configuration ==="
+              echo "=== Starting Immutable System Setup ==="
+              
+              # 1. Create baseline operational directories safely
+              mkdir -p /home/ec2-user/terraform-project/prometheus_data
+              mkdir -p /home/ec2-user/terraform-project/grafana_data
+              
+              # 2. Apply persistent permission locks for container engines
+              chown -R 1000:1000 /home/ec2-user/terraform-project
+              chmod -R 755 /home/ec2-user/terraform-project
+              
+              # 3. Ensure native Docker engine is active on boot
+              systemctl daemon-reload
+              systemctl enable --now docker
+              
+              echo "=== Infrastructure Bootstrap Complete ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
@@ -197,13 +214,13 @@ resource "cloudflare_record" "www_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "www"
   content = var.domain_name
-  type    = "CNAME"
+  type    = "A"
   proxied = true
 }
 
 # 7. OUTPUTS
 output "monitoring_bucket_name" {
-  value = local.monitoring_bucket
+  value = aws_s3_bucket.monitoring_storage.id
 }
 
 output "website_url" {
