@@ -1,5 +1,5 @@
 ---
-- name: Deploy YT Thumbnail App with Monitoring
+- name: Deploy YT Thumbnail App with Stateless Monitoring
   hosts: all
   become: yes
   gather_facts: false
@@ -14,146 +14,30 @@
   tasks:
     - name: Ensure project base directory structure exists
       file:
-        path: "{{ item }}"
+        path: /home/ec2-user/terraform-project
         state: directory
         owner: ec2-user
         group: ec2-user
         mode: '0755'
-      loop:
-        - /home/ec2-user/terraform-project
 
-    # --- AUTOMATIC SYSTEM ENVIRONMENT REPAIR ---
-    - name: Verify baseline system operational dependencies
-      ansible.builtin.dnf:
-        name:
-          - cronie
-          - python3-pip
-        state: present
-
-    - name: Ensure cron service infrastructure is running
-      ansible.builtin.systemd:
-        name: crond
-        state: started
-        enabled: yes
-
-    - name: Check if S3 Python bindings are natively operational
-      ansible.builtin.command: python3 -c "import boto3, botocore"
-      register: boto_check
-      changed_when: false
-      failed_when: false
-
-    - name: Force inject Python cloud dependencies if missing
-      ansible.builtin.pip:
-        name: [boto3, botocore]
-        executable: pip3
-      when: boto_check.rc != 0
-
-    # --- NATIVE S3 RESTORATION ---
-    - name: Download latest master state snapshot from S3 vault
-      amazon.aws.s3_object:
-        bucket: monitoring-configs-and-stats-kali
-        object: monitoring_state.tar.gz
-        dest: /tmp/monitoring_state.tar.gz
-        mode: get
-      ignore_errors: yes
-      register: s3_download
-
-    - name: Pre-create Docker named volume storage engines
-      file:
-        path: "/var/lib/docker/volumes/terraform-project_{{ item }}/_data"
-        state: directory
-        mode: '0775'
-      loop:
-        - prometheus_data
-        - grafana_data
-      when: s3_download is succeeded
-
-    - name: Isolate extraction workspace
-      file:
-        path: /tmp/monitoring_restore
-        state: absent
-
-    - name: Extract monitoring archives to swap directory
-      ansible.builtin.unarchive:
-        src: /tmp/monitoring_state.tar.gz
-        dest: /tmp/
-        remote_src: yes
-      when: s3_download is succeeded
-
-    - name: Align and map S3 historical records directly into Docker Engine
-      shell: |
-        # Clear default engine paths to avoid conflicts before merging state
-        rm -rf /var/lib/docker/volumes/terraform-project_prometheus_data/_data/*
-        rm -rf /var/lib/docker/volumes/terraform-project_grafana_data/_data/*
-        
-        # Pull matching folders cleanly from the extracted /tmp/data directory structure
-        if [ -d "/tmp/data/prometheus" ]; then cp -r /tmp/data/prometheus/* /var/lib/docker/volumes/terraform-project_prometheus_data/_data/; fi
-        if [ -d "/tmp/data/grafana" ]; then cp -r /tmp/data/grafana/* /var/lib/docker/volumes/terraform-project_grafana_data/_data/; fi
-        
-        # Fix the strict database locked issue by opening read/write permissions
-        chmod -R 777 /var/lib/docker/volumes/terraform-project_prometheus_data/_data/
-        chmod -R 777 /var/lib/docker/volumes/terraform-project_grafana_data/_data/
-        
-        # Apply deterministic UID ownership configurations
-        chown -R 65534:65534 /var/lib/docker/volumes/terraform-project_prometheus_data/_data/
-        chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data/
-      when: s3_download is succeeded
-
-    - name: Purge temporary unpacking artifacts
-      file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /tmp/monitoring_state.tar.gz
-        - /tmp/data
-      when: s3_download is succeeded
-
-    # --- CONFIGURATION LINKING ---
-    - name: Copy project runtime configuration blueprints to EC2
+    - name: Copy stateless project code and configurations to EC2
       copy:
         src: "../{{ item }}"
         dest: /home/ec2-user/terraform-project/
         owner: ec2-user
         group: ec2-user
-      loop: [docker-compose.yml, api, website, default.conf, prometheus.yml]
+      loop: 
+        - docker-compose.yml
+        - default.conf
+        - prometheus.yml
+        - api
+        - website
+        - grafana
 
-    # --- AUTOMATED BACKUP CRON JOB ---
-    - name: Create the persistent structural backup script on EC2
-      copy:
-        dest: /home/ec2-user/backup_monitoring.sh
-        mode: '0755'
-        owner: ec2-user
-        group: ec2-user
-        content: |
-          #!/bin/bash
-          TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
-          BUCKET="monitoring-configs-and-stats-kali"
-          
-          # Maintain consistent root structure by creating temporary structure for compression
-          rm -rf /tmp/data
-          mkdir -p /tmp/data/prometheus /tmp/data/grafana
-          cp -r /var/lib/docker/volumes/terraform-project_prometheus_data/_data/* /tmp/data/prometheus/ 2>/dev/null
-          cp -r /var/lib/docker/volumes/terraform-project_grafana_data/_data/* /tmp/data/grafana/ 2>/dev/null
-          
-          sudo tar -czf /tmp/monitoring_state.tar.gz -C /tmp ./data
-          
-          aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
-          aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
-          sudo rm -rf /tmp/monitoring_state.tar.gz /tmp/data
+    - name: Purge any conflicting container configurations cleanly
+      shell: "docker rm -f backend frontend node-exporter prometheus grafana || true"
 
-    - name: Schedule the Backup Cron Job (Every night at 3 AM)
-      ansible.builtin.cron:
-        name: "Nightly Monitoring Backup"
-        minute: "0"
-        hour: "3"
-        user: ec2-user
-        job: "/home/ec2-user/backup_monitoring.sh > /dev/null 2>&1"
-
-    # --- DETERMINISTIC CONTAINER ORCHESTRATION ---
-    - name: Terminate conflicting containers to avoid routing state collisions
-      shell: "docker rm -f backend frontend prometheus grafana || true"
-
-    - name: Deploy fresh service containers via Standalone Compose Engine
+    - name: Declarative deployment via Docker Compose
       shell: "/usr/bin/docker-compose up -d --build --force-recreate"
       args:
         chdir: /home/ec2-user/terraform-project
