@@ -82,8 +82,15 @@
 
     - name: Align and map S3 historical records directly into Docker Engine
       shell: |
-        cp -r /tmp/data/prometheus/* /var/lib/docker/volumes/terraform-project_prometheus_data/_data/ || true
-        cp -r /tmp/data/grafana/* /var/lib/docker/volumes/terraform-project_grafana_data/_data/ || true
+        # Clear default engine paths to avoid conflicts before merging state
+        rm -rf /var/lib/docker/volumes/terraform-project_prometheus_data/_data/*
+        rm -rf /var/lib/docker/volumes/terraform-project_grafana_data/_data/*
+        
+        # Pull matching folders cleanly from the extracted /tmp/data directory structure
+        if [ -d "/tmp/data/prometheus" ]; then cp -r /tmp/data/prometheus/* /var/lib/docker/volumes/terraform-project_prometheus_data/_data/; fi
+        if [ -d "/tmp/data/grafana" ]; then cp -r /tmp/data/grafana/* /var/lib/docker/volumes/terraform-project_grafana_data/_data/; fi
+        
+        # Apply deterministic UID ownership configurations
         chown -R 65534:65534 /var/lib/docker/volumes/terraform-project_prometheus_data/_data/
         chown -R 472:472 /var/lib/docker/volumes/terraform-project_grafana_data/_data/
       when: s3_download is succeeded
@@ -117,10 +124,18 @@
           #!/bin/bash
           TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
           BUCKET="monitoring-configs-and-stats-kali"
-          sudo tar -czf /tmp/monitoring_state.tar.gz -C /var/lib/docker/volumes/ ./terraform-project_prometheus_data ./terraform-project_grafana_data
+          
+          # Maintain consistent root structure by creating temporary structure for compression
+          rm -rf /tmp/data
+          mkdir -p /tmp/data/prometheus /tmp/data/grafana
+          cp -r /var/lib/docker/volumes/terraform-project_prometheus_data/_data/* /tmp/data/prometheus/ 2>/dev/null
+          cp -r /var/lib/docker/volumes/terraform-project_grafana_data/_data/* /tmp/data/grafana/ 2>/dev/null
+          
+          sudo tar -czf /tmp/monitoring_state.tar.gz -C /tmp ./data
+          
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/monitoring_state.tar.gz
           aws s3 cp /tmp/monitoring_state.tar.gz s3://$BUCKET/backups/monitoring_state_$TIMESTAMP.tar.gz
-          sudo rm -f /tmp/monitoring_state.tar.gz
+          sudo rm -rf /tmp/monitoring_state.tar.gz /tmp/data
 
     - name: Schedule the Backup Cron Job (Every night at 3 AM)
       ansible.builtin.cron:
