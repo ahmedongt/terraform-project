@@ -163,7 +163,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (NOW BACKED BY PRE-BAKED IMMUTABLE INFRASTRUCTURE)
+# 5. THE SERVER (BACKED BY PURE IMMUTABLE INFRASTRUCTURE)
 resource "aws_instance" "my_web_server" {
   ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
@@ -172,25 +172,21 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  # FULLY AUTOMATED CLOUD BOOTSTRAP PIPELINE
+  # FAST STRUCTURAL BASELINE PREPARATION
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              echo "=== Starting Immutable System Setup ==="
+              echo "=== Verifying Persistent Volumes ==="
               
-              # 1. Create baseline operational directories safely
-              mkdir -p /home/ec2-user/terraform-project/prometheus_data
-              mkdir -p /home/ec2-user/terraform-project/grafana_data
+              # Ensure empty tracking directories exist for monitoring mount mappings safely
+              mkdir -p /app/terraform-project/prometheus_data
+              mkdir -p /app/terraform-project/grafana_data
               
-              # 2. Apply persistent permission locks for container engines
-              chown -R 1000:1000 /home/ec2-user/terraform-project
-              chmod -R 755 /home/ec2-user/terraform-project
+              # Set proper ownership for containers to write metrics logs smoothly
+              chown -R 1000:1000 /app/terraform-project
+              chmod -R 755 /app/terraform-project
               
-              # 3. Ensure native Docker engine is active on boot
-              systemctl daemon-reload
-              systemctl enable --now docker
-              
-              echo "=== Infrastructure Bootstrap Complete ==="
+              echo "=== Immutable Infrastructure Deployment Confirmed ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
@@ -212,8 +208,8 @@ resource "cloudflare_record" "site_dns" {
 resource "cloudflare_record" "www_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "www"
-  content = var.domain_name # Maps text to text domain perfectly
-  type    = "CNAME"         # Restored back to CNAME standard configuration
+  content = var.domain_name 
+  type    = "CNAME"         
   proxied = true
 }
 

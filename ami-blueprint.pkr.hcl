@@ -25,28 +25,71 @@ build {
   name    = "bake-devops-stack"
   sources = ["source.amazon-ebs.golden_ami"]
 
+  # 1. INDUSTRY STANDARD CODE INJECTION: Copy your workspace directories directly into the image staging path
+  provisioner "file" {
+    source      = "./"
+    destination = "/tmp/app-workspace"
+  }
+
   provisioner "shell" {
     inline = [
       "echo '=== Beginning Image Baking Process ==='",
       "sudo dnf update -y",
       
-      # PRE-INSTALL SYSTEM DEPENDENCIES: Shifting the CPU execution time onto Packer
+      # Install Baseline Packages
       "sudo dnf install -y docker aws-cli python3-pip cronie",
       "sudo systemctl enable docker",
       "sudo systemctl enable crond",
       
-      # PRE-INSTALL PIP UTILITIES: Baking boto3 right into the base OS filesystem
       "sudo pip3 install boto3 botocore",
       
+      # Setup Docker Compose Plugin natively
       "sudo curl -L 'https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64' -o /usr/local/bin/docker-compose",
       "sudo chmod +x /usr/local/bin/docker-compose",
       "sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose",
+      
+      # Setup System Users & Permissions safely
       "sudo useradd -m ssm-user || true",
       "sudo usermod -a -G docker ec2-user",
       "sudo usermod -a -G docker ssm-user",
       "echo 'ssm-user ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ssm-user",
       "sudo chmod 0440 /etc/sudoers.d/ssm-user",
-      "echo 'Defaults !requiretty' | sudo tee -a /etc/sudoers",
+      
+      # Move the staged workspace code into the official operational folder
+      "sudo mkdir -p /app/terraform-project",
+      "sudo cp -r /tmp/app-workspace/* /app/terraform-project/",
+      "sudo rm -rf /tmp/app-workspace",
+      
+      # Clean up local Git configurations inside the image path to prevent security leakage
+      "sudo rm -rf /app/terraform-project/.git*",
+      
+      # Enforce secure system permissions across operational files
+      "sudo chown -R ec2-user:docker /app/terraform-project",
+      "sudo chmod -R 755 /app/terraform-project",
+
+      # 2. THE AUTOMATION HEARTBEAT: Create a native Linux systemd service to run the app on boot
+      "echo '=== Creating Native App Boot Daemon ==='",
+      "sudo tee /etc/systemd/system/app-stack.service <<'EOF'",
+[Unit]
+Description=Multi-Tier Application Container Stack
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/app/terraform-project
+ExecStart=/usr/bin/docker-compose up -d
+ExecStop=/usr/bin/docker-compose down
+
+[Install]
+WantedBy=multi-user.target
+EOF",
+
+      # Enable the boot unit daemon so it triggers automatically on hardware initiation
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable app-stack.service",
+      
       "echo '=== Image Baking Complete! ==='"
     ]
   }
