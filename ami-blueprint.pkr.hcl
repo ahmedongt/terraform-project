@@ -31,6 +31,7 @@ build {
     destination = "/tmp/app-workspace"
   }
 
+  # Executing via a clean inline script string block to prevent multi-line parsing failure
   provisioner "shell" {
     inline = [
       "echo '=== Beginning Image Baking Process ==='",
@@ -67,24 +68,22 @@ build {
       "sudo chown -R ec2-user:docker /app/terraform-project",
       "sudo chmod -R 755 /app/terraform-project",
 
-      # 2. THE AUTOMATION HEARTBEAT: Create a native Linux systemd service to run the app on boot
+      # 2. THE AUTOMATION HEARTBEAT: Write the native Linux systemd service block
       "echo '=== Creating Native App Boot Daemon ==='",
-      "sudo tee /etc/systemd/system/app-stack.service <<'EOF'",
-[Unit]
-Description=Multi-Tier Application Container Stack
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=/app/terraform-project
-ExecStart=/usr/bin/docker-compose up -d
-ExecStop=/usr/bin/docker-compose down
-
-[Install]
-WantedBy=multi-user.target
-EOF",
+      "echo '[Unit]' | sudo tee /etc/systemd/system/app-stack.service",
+      "echo 'Description=Multi-Tier Application Container Stack' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'After=docker.service' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'Requires=docker.service' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo '' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo '[Service]' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'Type=oneshot' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'RemainAfterExit=yes' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'WorkingDirectory=/app/terraform-project' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'ExecStart=/usr/bin/docker-compose up -d' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'ExecStop=/usr/bin/docker-compose down' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo '' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo '[Install]' | sudo tee -a /etc/systemd/system/app-stack.service",
+      "echo 'WantedBy=multi-user.target' | sudo tee -a /etc/systemd/system/app-stack.service",
 
       # Enable the boot unit daemon so it triggers automatically on hardware initiation
       "sudo systemctl daemon-reload",
