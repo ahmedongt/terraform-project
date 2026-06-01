@@ -141,18 +141,22 @@ jobs:
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_grafana_admin_user: ${{ secrets.GRAFANA_ADMIN_USER }}
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           TF_VAR_domain_name: "ytthumbnail.site"
           TF_VAR_subdomain_name: "www"
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 7. APPLY INFRASTRUCTURE CONFIGURATIONS (Only executes on verified target production push tracking)
+      # 7. APPLY INFRASTRUCTURE CONFIGURATIONS
       - name: Terraform Apply
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: terraform apply -auto-approve
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          TF_VAR_grafana_admin_user: ${{ secrets.GRAFANA_ADMIN_USER }}
+          TF_VAR_grafana_admin_password: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           TF_VAR_domain_name: "ytthumbnail.site"
           TF_VAR_subdomain_name: "www"
           TF_VAR_user_name: "kali"

@@ -8,6 +8,17 @@ variable "user_name" {}
 variable "domain_name" {}
 variable "instance_type" {}
 
+# SECURE INJECTED VARIABLES FROM GITHUB RUNNER
+variable "grafana_admin_user" {
+  type      = string
+  sensitive = true
+}
+
+variable "grafana_admin_password" {
+  type      = string
+  sensitive = true
+}
+
 terraform {
   backend "s3" {
     bucket       = "kali-terraform-state-storage-2026"
@@ -172,7 +183,7 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  # FAST STRUCTURAL BASELINE PREPARATION
+  # FAST STRUCTURAL BASELINE PREPARATION WITH RUNTIME SECRETS INTERPOLATION
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
@@ -185,6 +196,16 @@ resource "aws_instance" "my_web_server" {
               # Set proper ownership for containers to write metrics logs smoothly
               chown -R 1000:1000 /app/terraform-project
               chmod -R 755 /app/terraform-project
+
+              echo "=== Injecting Secure Environment Secrets Natively ==="
+              cat <<ENVEOF > /app/terraform-project/.env
+              GF_SECURITY_ADMIN_USER=${var.grafana_admin_user}
+              GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}
+              ENVEOF
+
+              # Lock down read/write context parameters for the .env file
+              chmod 600 /app/terraform-project/.env
+              chown ec2-user:ec2-user /app/terraform-project/.env
               
               echo "=== Immutable Infrastructure Deployment Confirmed ==="
               EOF

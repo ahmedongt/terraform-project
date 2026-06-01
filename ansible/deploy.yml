@@ -1,6 +1,5 @@
-@'
 ---
-- name: Deploy YT Thumbnail App with Stateless Monitoring
+- name: Deploy YT Thumbnail App with Rebuild-Proof Monitoring State
   hosts: all
   become: yes
   gather_facts: false
@@ -11,23 +10,34 @@
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     ansible_ssh_extra_args: "-o ControlMaster=auto -o ControlPersist=120s"
     ansible_scp_if_ssh: false
+    project_path: /home/ec2-user/terraform-project
+    s3_bucket: "monitoring-configs-and-stats-kali"
 
   tasks:
-    - name: Ensure project base directory structure exists
+    - name: Create baseline operational directories safely
       file:
-        path: /home/ec2-user/terraform-project
+        path: "{{ item }}"
         state: directory
         owner: ec2-user
         group: ec2-user
         mode: '0755'
+      loop:
+        - "{{ project_path }}"
+        - "{{ project_path }}/prometheus_data"
+        - "{{ project_path }}/grafana_data"
 
-    - name: Copy stateless project code and configurations to EC2
+    - name: Download historical metric state database caches from cloud S3 store
+      shell: "aws s3 sync s3://{{ s3_bucket }}/data/ {{ project_path }}/ || true"
+      args:
+        executable: /bin/bash
+
+    - name: Copy project code artifacts and configurations to target host node
       copy:
         src: "../{{ item }}"
-        dest: /home/ec2-user/terraform-project/
+        dest: "{{ project_path }}/"
         owner: ec2-user
         group: ec2-user
-      loop: 
+      loop:
         - docker-compose.yml
         - default.conf
         - prometheus.yml
@@ -35,14 +45,30 @@
         - website
         - grafana
 
-    - name: Purge any conflicting container configurations cleanly
+    - name: Purge dead infrastructure locks cleanly
       shell: "docker rm -f backend frontend node-exporter prometheus grafana || true"
 
-    - name: Declarative deployment via Docker Compose
+    - name: Restore permissions on persistent volume data endpoints
+      file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.owner }}"
+        mode: '0777'
+      loop:
+        - { path: "{{ project_path }}/prometheus_data", owner: "65534" } # Prometheus container user ID
+        - { path: "{{ project_path }}/grafana_data", owner: "472" }     # Grafana container user ID
+
+    - name: Launch application platform stack via Docker Compose
       shell: "/usr/bin/docker-compose up -d --build --force-recreate"
       args:
-        chdir: /home/ec2-user/terraform-project
+        chdir: "{{ project_path }}"
       environment:
         DOCKER_BUILDKIT: "0"
         COMPOSE_DOCKER_CLI_BUILD: "0"
-'@ | Out-File -Encoding utf8 .\ansible\deploy.yml
+
+    - name: Deploy backup cron engine task to survive infrastructure rebuilds
+      cron:
+        name: "Sync runtime metrics to cloud S3 tracking bucket"
+        minute: "0"
+        job: "aws s3 sync {{ project_path }}/prometheus_data s3://{{ s3_bucket }}/data/prometheus_data --delete && aws s3 sync {{ project_path }}/grafana_data s3://{{ s3_bucket }}/data/grafana_data --delete"
