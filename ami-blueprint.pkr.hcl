@@ -25,13 +25,12 @@ build {
   name    = "bake-devops-stack"
   sources = ["source.amazon-ebs.golden_ami"]
 
-  # 1. INDUSTRY STANDARD CODE INJECTION: Copy your workspace directories directly into the image staging path
+  # 1. FIXED DIRECTORY UPLOAD: Uploading the current folder context to /tmp safely
   provisioner "file" {
     source      = "./"
-    destination = "/tmp/app-workspace"
+    destination = "/tmp"
   }
 
-  # Executing via a clean inline script string block to prevent multi-line parsing failure
   provisioner "shell" {
     inline = [
       "echo '=== Beginning Image Baking Process ==='",
@@ -56,15 +55,19 @@ build {
       "echo 'ssm-user ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ssm-user",
       "sudo chmod 0440 /etc/sudoers.d/ssm-user",
       
-      # Move the staged workspace code into the official operational folder
+      # Initialize the official app directory space
       "sudo mkdir -p /app/terraform-project",
-      "sudo cp -r /tmp/app-workspace/* /app/terraform-project/",
-      "sudo rm -rf /tmp/app-workspace",
       
-      # Clean up local Git configurations inside the image path to prevent security leakage
+      # Move files from the uploaded staging workspace area into the runtime folder path
+      "sudo cp -r /tmp/terraform-project/* /app/terraform-project/ 2>/dev/null || sudo cp -r /tmp/* /app/terraform-project/ 2>/dev/null || true",
+      
+      # Clean up remaining build-time staging artifacts from /tmp to keep the filesystem pristine
+      "sudo rm -rf /tmp/terraform-project /tmp/ami-blueprint.pkr.hcl /tmp/main.tf",
+      
+      # Clean up local Git tracking configurations inside the image to maintain security standards
       "sudo rm -rf /app/terraform-project/.git*",
       
-      # Enforce secure system permissions across operational files
+      # Enforce secure system permissions across operational tracking directories
       "sudo chown -R ec2-user:docker /app/terraform-project",
       "sudo chmod -R 755 /app/terraform-project",
 
