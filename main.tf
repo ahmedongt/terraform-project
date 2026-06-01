@@ -203,9 +203,9 @@ resource "aws_instance" "my_web_server" {
               GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}
               ENVEOF
 
-              # Lock down read/write context parameters for the .env file
+              # Lock down read/write context parameters for the .env file to ssm-user
               chmod 600 /app/terraform-project/.env
-              chown ec2-user:ec2-user /app/terraform-project/.env
+              chown ssm-user:ssm-user /app/terraform-project/.env
               
               echo "=== Immutable Infrastructure Deployment Confirmed ==="
               EOF
