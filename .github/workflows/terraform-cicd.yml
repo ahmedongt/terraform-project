@@ -64,7 +64,7 @@ jobs:
         run: packer build -color=false -on-error=cleanup ami-blueprint.pkr.hcl
 
   terraform:
-    name: "Terraform & Ansible Deploy"
+    name: "Terraform Infrastructure Deploy"
     runs-on: ubuntu-latest
     needs: packer
     # THE SECRET SAUCE: Allows execution to proceed whether Packer ran successfully or was skipped entirely
@@ -116,22 +116,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # 5. AUTOMATED LOCK CLEANUP (Prevents MD5 Checksum Mismatch)
-      - name: Clear Stale Terraform Checksum Lock
-        run: |
-          echo "Checking and clearing any stale md5 tracking keys from DynamoDB..."
-          aws dynamodb delete-item \
-            --table-name kali-terraform-state-locks \
-            --key '{"LockID": {"S": "kali-terraform-state-storage-2026/state/terraform.tfstate-md5"}}'
-        continue-on-error: true
-
-      # 6. SETUP TERRAFORM
+      # 5. SETUP TERRAFORM ENGINE
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
 
-      # 7. INITIALIZE & PLAN
+      # 6. INITIALIZE & PLAN STAGES
       - name: Terraform Init
         run: |
           terraform init \
@@ -155,7 +146,7 @@ jobs:
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
 
-      # 8. APPLY CHANGES (Only runs on Master push)
+      # 7. APPLY INFRASTRUCTURE CONFIGURATIONS (Only executes on verified target production push tracking)
       - name: Terraform Apply
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: terraform apply -auto-approve
@@ -166,55 +157,3 @@ jobs:
           TF_VAR_subdomain_name: "www"
           TF_VAR_user_name: "kali"
           TF_VAR_instance_type: "t3.micro"
-
-      # 9. CAPTURE SERVER INSTANCE ID (Required for AWS SSM Session Routing)
-      - name: Get Server Instance ID
-        id: get_instance_id
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        run: |
-          echo "INSTANCE_ID=$(terraform output -raw ec2_instance_id)" >> $GITHUB_OUTPUT
-
-      # 10. INSTALL AWS SSM PLUGIN & CONFIGURE SSH TUNNEL PROXY
-      - name: Install AWS SSM Plugin and Setup SSH Proxy
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        run: |
-          curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
-          sudo dpkg -i session-manager-plugin.deb
-          
-          mkdir -p ~/.ssh
-          cat <<EOF >> ~/.ssh/config
-          Host i-* mi-*
-              ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
-              StrictHostKeyChecking no
-              UserKnownHostsFile /dev/null
-          EOF
-          chmod 600 ~/.ssh/config
-
-      # 10b. DYNAMIC POLLING CHECK: WAIT UNTIL SSM IS ONLINE BEFORE RUNNING ANSIBLE
-      - name: Wait until SSM Agent is Online
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        env:
-          TARGET_INSTANCE_ID: ${{ steps.get_instance_id.outputs.INSTANCE_ID }}
-        run: |
-          echo "Target Instance verified: $TARGET_INSTANCE_ID"
-          echo "Checking connection status with AWS Systems Manager Core..."
-          until aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$TARGET_INSTANCE_ID" --query "InstanceInformationList[0].PingStatus" --output text | grep -q "Online"; do
-            echo "Instance SSM agent is initializing dependencies... Checking status again in 10 seconds."
-            sleep 10
-          done
-          echo "SSM Agent status confirmed: ONLINE. Proceeding to container configuration."
-
-      # 11. RUN ANSIBLE DEPLOYMENT VIA SECURE SSM PROXYJUMP TUNNEL
-      - name: Run Ansible Playbook via SSM Secure Tunnel
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: False
-          TARGET_INSTANCE_ID: ${{ steps.get_instance_id.outputs.INSTANCE_ID }}
-        run: |
-          echo "${{ secrets.EC2_SSH_KEY }}" > private_key.pem
-          chmod 600 private_key.pem
-
-          ansible-galaxy collection install community.docker
-          ansible-playbook -i "$TARGET_INSTANCE_ID," ansible/deploy.yml \
-            --private-key private_key.pem \
-            -e "ansible_user=ec2-user"
