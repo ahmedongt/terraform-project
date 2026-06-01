@@ -36,6 +36,15 @@ services:
       - '--path.rootfs=/rootfs'
       - '--path.sysfs=/host/sys'
 
+  # --- PROMETHEUS STORAGE INITIALIZER ---
+  prometheus-init:
+    image: alpine:latest
+    container_name: prometheus-init
+    user: "root"
+    volumes:
+      - ./prometheus_data:/prometheus
+    command: chown -R 65534:65534 /prometheus
+
   # Prometheus
   prometheus:
     image: prom/prometheus:latest
@@ -51,8 +60,21 @@ services:
       - '--storage.tsdb.retention.time=15d'
       - '--storage.tsdb.path=/prometheus'
     depends_on:
-      - backend
-      - node-exporter
+      backend:
+        condition: service_started
+      node-exporter:
+        condition: service_started
+      prometheus-init:
+        condition: service_completed_successfully
+
+  # --- GRAFANA STORAGE INITIALIZER ---
+  grafana-init:
+    image: alpine:latest
+    container_name: grafana-init
+    user: "root"
+    volumes:
+      - ./grafana_data:/var/lib/grafana
+    command: chown -R 472:472 /var/lib/grafana
 
   # Grafana
   grafana:
@@ -69,4 +91,7 @@ services:
       - ./grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      grafana-init:
+        condition: service_completed_successfully
