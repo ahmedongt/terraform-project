@@ -25,7 +25,7 @@ build {
   name    = "bake-devops-stack"
   sources = ["source.amazon-ebs.golden_ami"]
 
-  # 1. FIXED DIRECTORY UPLOAD: Uploading the current folder context to /tmp safely
+  # 1. WORKSPACE STAGING: Safely move workspace assets into /tmp
   provisioner "file" {
     source      = "./"
     destination = "/tmp"
@@ -36,34 +36,34 @@ build {
       "echo '=== Beginning Image Baking Process ==='",
       "sudo dnf update -y",
       
-      # Install Baseline Packages
+      # Install Baseline Infrastructure Engine Components
       "sudo dnf install -y docker aws-cli python3-pip cronie",
       "sudo systemctl enable docker",
       "sudo systemctl enable crond",
       
       "sudo pip3 install boto3 botocore",
       
-      # Setup Docker Compose Plugin natively
+      # Install Native Docker Compose Plugin 
       "sudo curl -L 'https://github.com/docker/compose/releases/latest/download/docker-compose-Linux-x86_64' -o /usr/local/bin/docker-compose",
       "sudo chmod +x /usr/local/bin/docker-compose",
       "sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose",
       
-      # Setup System Users & Permissions safely
+      # System User & Access Token Layer Adjustments
       "sudo useradd -m ssm-user || true",
       "sudo usermod -a -G docker ec2-user",
       "sudo usermod -a -G docker ssm-user",
       "echo 'ssm-user ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/ssm-user",
       "sudo chmod 0440 /etc/sudoers.d/ssm-user",
       
-      # Initialize the official app directory space
+      # Initialize runtime directory path
       "sudo mkdir -p /app/terraform-project",
       
-      # Move files from the uploaded staging workspace area into the runtime folder path
+      # Move files from staging into production space
       "sudo cp -r /tmp/terraform-project/* /app/terraform-project/ 2>/dev/null || sudo cp -r /tmp/* /app/terraform-project/ 2>/dev/null || true",
       
       # =========================================================================
-      # 2. IMMUTABLE PRE-BAKE INFRASTRUCTURE LAYER STEP
-      # Compile custom application containers inside the image builder pipeline
+      # 2. IMMUTABLE PACKER CONTAINER LAYER
+      # Pre-compile the custom Backend API container layer during build phase
       # =========================================================================
       "echo '=== Pre-baking Custom Backend API Container Image ==='",
       "sudo systemctl start docker",
@@ -71,21 +71,27 @@ build {
       "sudo docker build -t devops-backend:latest ./api",
       "sudo systemctl stop docker",
       
-      # Clean up remaining build-time staging artifacts from /tmp to keep the filesystem pristine
+      # =========================================================================
+      # 3. INDUSTRY-STANDARD MOUNT PERMISSION LAYER
+      # Map precise internal Container UIDs to dedicated host storage paths
+      # =========================================================================
+      "echo '=== Pre-Creating Storage Volumes with Dedicated Container UID Mappings ==='",
+      "sudo mkdir -p /app/terraform-project/prometheus_data /app/terraform-project/grafana_data",
+      "sudo chown -R 65534:65534 /app/terraform-project/prometheus_data",
+      "sudo chown -R 472:472 /app/terraform-project/grafana_data",
+      
+      # Clean up remaining deployment-time tracking files from temporary space
       "sudo rm -rf /tmp/terraform-project /tmp/ami-blueprint.pkr.hcl /tmp/main.tf",
-      
-      # Clean up local Git tracking configurations inside the image to maintain security standards
       "sudo rm -rf /app/terraform-project/.git*",
-      
-      # Remove raw development source code now that its binary abstraction layer is baked into storage
       "sudo rm -rf /app/terraform-project/api",
       
-      # Enforce secure system permissions across operational tracking directories
-      "sudo chown -R ec2-user:docker /app/terraform-project",
+      # Enforce standard access controls across baseline structural directories
+      "sudo chown ec2-user:docker /app/terraform-project",
+      "sudo chown -R ec2-user:docker /app/terraform-project/website /app/terraform-project/default.conf /app/terraform-project/prometheus.yml /app/terraform-project/docker-compose.yml 2>/dev/null || true",
       "sudo chmod -R 755 /app/terraform-project",
 
-      # 3. THE AUTOMATION HEARTBEAT: Write the native Linux systemd service block
-      "echo '=== Creating Native App Boot Daemon ==='",
+      # 4. SERVICE ORCHESTRATION: Set up systemd boot configuration unit
+      "echo '=== Generating Native Systemd Application Daemon ==='",
       "echo '[Unit]' | sudo tee /etc/systemd/system/app-stack.service",
       "echo 'Description=Multi-Tier Application Container Stack' | sudo tee -a /etc/systemd/system/app-stack.service",
       "echo 'After=docker.service' | sudo tee -a /etc/systemd/system/app-stack.service",
@@ -101,7 +107,6 @@ build {
       "echo '[Install]' | sudo tee -a /etc/systemd/system/app-stack.service",
       "echo 'WantedBy=multi-user.target' | sudo tee -a /etc/systemd/system/app-stack.service",
 
-      # Enable the boot unit daemon so it triggers automatically on hardware initiation
       "sudo systemctl daemon-reload",
       "sudo systemctl enable app-stack.service",
       
