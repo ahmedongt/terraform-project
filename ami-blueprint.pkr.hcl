@@ -61,17 +61,30 @@ build {
       # Move files from the uploaded staging workspace area into the runtime folder path
       "sudo cp -r /tmp/terraform-project/* /app/terraform-project/ 2>/dev/null || sudo cp -r /tmp/* /app/terraform-project/ 2>/dev/null || true",
       
+      # =========================================================================
+      # 2. IMMUTABLE PRE-BAKE INFRASTRUCTURE LAYER STEP
+      # Compile custom application containers inside the image builder pipeline
+      # =========================================================================
+      "echo '=== Pre-baking Custom Backend API Container Image ==='",
+      "sudo systemctl start docker",
+      "cd /app/terraform-project",
+      "sudo docker build -t devops-backend:latest ./api",
+      "sudo systemctl stop docker",
+      
       # Clean up remaining build-time staging artifacts from /tmp to keep the filesystem pristine
       "sudo rm -rf /tmp/terraform-project /tmp/ami-blueprint.pkr.hcl /tmp/main.tf",
       
       # Clean up local Git tracking configurations inside the image to maintain security standards
       "sudo rm -rf /app/terraform-project/.git*",
       
+      # Remove raw development source code now that its binary abstraction layer is baked into storage
+      "sudo rm -rf /app/terraform-project/api",
+      
       # Enforce secure system permissions across operational tracking directories
       "sudo chown -R ec2-user:docker /app/terraform-project",
       "sudo chmod -R 755 /app/terraform-project",
 
-      # 2. THE AUTOMATION HEARTBEAT: Write the native Linux systemd service block
+      # 3. THE AUTOMATION HEARTBEAT: Write the native Linux systemd service block
       "echo '=== Creating Native App Boot Daemon ==='",
       "echo '[Unit]' | sudo tee /etc/systemd/system/app-stack.service",
       "echo 'Description=Multi-Tier Application Container Stack' | sudo tee -a /etc/systemd/system/app-stack.service",
@@ -96,5 +109,3 @@ build {
     ]
   }
 }
-
-# Pipeline forced trigger: Encoding and trailing space issues sanitized successfully.
