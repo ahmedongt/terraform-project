@@ -199,8 +199,8 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Injecting Secure Environment Secrets Natively ==="
               cat <<ENVEOF > /app/terraform-project/.env
-              GF_SECURITY_ADMIN_USER=${var.grafana_admin_user}
-              GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}
+              GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
+              GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
               ENVEOF
 
               # Lock down read/write context parameters for the .env file to ssm-user
