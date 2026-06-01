@@ -10,12 +10,11 @@ variable "instance_type" {}
 
 terraform {
   backend "s3" {
-    bucket         = "kali-terraform-state-storage-2026"
-    key            = "state/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    dynamodb_table = "kali-terraform-state-locks" 
-    use_lockfile   = true 
+    bucket       = "kali-terraform-state-storage-2026"
+    key          = "state/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true 
   }
 
   required_providers {
@@ -121,7 +120,7 @@ resource "aws_s3_bucket" "website_bucket" {
 # PERSISTENT STORAGE LOCK (Survives infrastructure destruction loops)
 resource "aws_s3_bucket" "monitoring_storage" {
   bucket        = local.monitoring_bucket
-  force_destroy = false # Protects metric records from dropping during terraform destroy
+  force_destroy = false 
 }
 
 # 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER POLICIES)
@@ -213,8 +212,8 @@ resource "cloudflare_record" "site_dns" {
 resource "cloudflare_record" "www_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "www"
-  content = var.domain_name
-  type    = "A"
+  content = var.domain_name # Maps text to text domain perfectly
+  type    = "CNAME"         # Restored back to CNAME standard configuration
   proxied = true
 }
 
