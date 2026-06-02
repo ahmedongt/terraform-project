@@ -368,7 +368,7 @@ resource "aws_instance" "my_web_server" {
               echo "=== Deployment Completed Safely ==="
               EOF
 
-  tags = { Name = "Web-Server-for-${var.var.user_name}" }
+  tags = { Name = "Web-Server-for-${var.user_name}" }
 
   lifecycle {
     create_before_destroy = true
