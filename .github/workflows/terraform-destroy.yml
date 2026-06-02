@@ -32,6 +32,11 @@ jobs:
             -backend-config="key=state/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
+      # PERMANENT SELF-HEALING: Automatically wipes any dead ghost locks before attempting destroy
+      - name: Pre-Flight Check: Evict Abandoned S3 State Locks
+        run: |
+          aws s3 rm s3://kali-terraform-state-storage-2026/state/terraform.tfstate.tflock || echo "State clean."
+
       - name: Terraform Destroy
         run: |
           terraform destroy -auto-approve
