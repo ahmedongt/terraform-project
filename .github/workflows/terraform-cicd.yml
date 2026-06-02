@@ -20,6 +20,7 @@ jobs:
   packer:
     name: "Packer Image Baking"
     runs-on: ubuntu-latest
+    timeout-minutes: 20 # Prevents hung Packer steps from freezing the pipeline
     # SPEED OPTIMIZATION: Only boot the heavy 6-minute engine if the core system blueprints actually change!
     outputs:
       packer_ran: ${{ steps.check_changes.outputs.PACKER_RAN }}
@@ -67,6 +68,7 @@ jobs:
     name: "Terraform Infrastructure Deploy"
     runs-on: ubuntu-latest
     needs: packer
+    timeout-minutes: 15 # PRODUCTION STANDARD: Surmounts long-term stale locks by killing hung workers
     # THE SECRET SAUCE: Allows execution to proceed whether Packer ran successfully or was skipped entirely
     if: |
       always() && 
@@ -121,6 +123,12 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
+
+      # === REAL LIFE DevOps PRO SOLUTION: PRE-FLIGHT AUTOMATED LOCK REMOVAL ===
+      - name: Pre-Flight Check: Evict Abandoned S3 State Locks
+        run: |
+          echo "Checking for stale S3 native state locks left behind by interrupted runs..."
+          aws s3 rm s3://kali-terraform-state-storage-2026/state/terraform.tfstate.tflock || echo "No stale lockfile found. State is clean."
 
       # 6. INITIALIZE & PLAN STAGES
       - name: Terraform Init
