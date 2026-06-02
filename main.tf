@@ -188,8 +188,13 @@ resource "aws_instance" "my_web_server" {
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
               
-              echo "=== Ensuring Native Docker Compose CLI Plugin is Installed ==="
-              dnf install -y docker-compose-plugin
+              echo "=== Downloading Standalone Docker Compose Engine Subsystem ==="
+              mkdir -p /usr/local/lib/docker/cli-plugins
+              curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
+              chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+              # Create a global fallback symlink so both 'docker compose' and old 'docker-compose' work seamlessly
+              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
               echo "=== Creating Project Directories ==="
               mkdir -p /app/terraform-project/prometheus_data
@@ -365,8 +370,8 @@ resource "aws_instance" "my_web_server" {
               echo "=== Initializing Application Engine Core Orchestration ==="
               cd /app/terraform-project
               
-              docker compose down || true
-              docker compose up -d
+              /usr/local/lib/docker/cli-plugins/docker-compose down || true
+              /usr/local/lib/docker/cli-plugins/docker-compose up -d
               
               echo "=== Deployment Completed Safely ==="
               EOF
