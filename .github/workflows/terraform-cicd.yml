@@ -7,10 +7,11 @@ on:
       - main
       - feature/docker-migration
       - feature/aws-ssm-migration
-    # SMARTEST PATH ROUTING: Ensures background steps evaluate code spaces selectively
+    # PERMANENT FIX: Ignore modifications to the destroy file so it never trips this build pipeline
     paths-ignore:
       - 'README.md'
       - '.gitignore'
+      - '.github/workflows/terraform-destroy.yml'
   pull_request:
     branches:
       - master
@@ -123,8 +124,6 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
-
-     
 
       # 6. INITIALIZE & PLAN STAGES
       - name: Terraform Init
