@@ -187,6 +187,10 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              
+              echo "=== Ensuring Native Docker Compose CLI Plugin is Installed ==="
+              dnf install -y docker-compose-plugin
+
               echo "=== Creating Project Directories ==="
               mkdir -p /app/terraform-project/prometheus_data
               mkdir -p /app/terraform-project/grafana_data
@@ -361,7 +365,6 @@ resource "aws_instance" "my_web_server" {
               echo "=== Initializing Application Engine Core Orchestration ==="
               cd /app/terraform-project
               
-              # Using the direct, unambiguous multi-command tool strategy for modern engine runtimes
               docker compose down || true
               docker compose up -d
               
