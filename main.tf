@@ -185,7 +185,7 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              
+               
               echo "=== Downloading Standalone Docker Compose Engine Subsystem ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
@@ -206,7 +206,7 @@ resource "aws_instance" "my_web_server" {
               chmod 600 /app/terraform-project/.env
 
               echo "=== Dynamically Generating Provisioning Infrastructure ==="
-              
+               
               # TARGET DIRECTORY POINTED TO DEFAULT ROOT STORAGE DIRECTORY FOR COHERENCE
               cat << 'DASHBOARD_EOF' > /app/terraform-project/grafana/provisioning/dashboards/all.yml
               apiVersion: 1
@@ -231,28 +231,9 @@ resource "aws_instance" "my_web_server" {
                   isDefault: true
               DATASOURCE_EOF
 
-              # Drop the node_exporter dashboard JSON directly into our shared volume dashboard block path
+              # Dynamically pulling your real production file directly from your local repository path
               cat << 'JSON_EOF' > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
-              {
-                "annotations": { "list": [] },
-                "editable": true,
-                "fiscalYearStartMonth": 0,
-                "graphTooltip": 0,
-                "id": null,
-                "links": [],
-                "liveNow": false,
-                "panels": [],
-                "refresh": "5s",
-                "schemaVersion": 38,
-                "style": "dark",
-                "tags": [],
-                "time": { "from": "now-1h", "to": "now" },
-                "timepicker": {},
-                "timezone": "",
-                "title": "Node Exporter Dashboard",
-                "version": 1,
-                "weekStart": ""
-              }
+              ${file("${path.module}/grafana/provisioning/dashboards/node_exporter.json")}
               JSON_EOF
 
               cat << 'PROM_EOF' > /app/terraform-project/prometheus.yml
@@ -349,7 +330,6 @@ resource "aws_instance" "my_web_server" {
                   volumes:
                     - ./grafana_data:/var/lib/grafana
                     - ./grafana/provisioning:/etc/grafana/provisioning:ro
-                    # PERFECT VOLUME MAPPING DIRECTLY FOR SYSTEM FILES FINDER
                     - ./grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
                   depends_on:
                     prometheus:
@@ -366,7 +346,7 @@ resource "aws_instance" "my_web_server" {
               cd /app/terraform-project
               /usr/local/lib/docker/cli-plugins/docker-compose down || true
               /usr/local/lib/docker/cli-plugins/docker-compose up -d
-              
+               
               echo "=== Deployment Completed Safely ==="
               EOF
 
