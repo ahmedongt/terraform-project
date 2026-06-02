@@ -193,14 +193,6 @@ resource "aws_instance" "my_web_server" {
               mkdir -p /app/terraform-project/grafana/provisioning/dashboards
               mkdir -p /app/terraform-project/grafana/provisioning/datasources
 
-              echo "=== Fixing Docker Compose V2 CLI Engine Aliasing ==="
-              mkdir -p /usr/local/lib/docker/cli-plugins
-              ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
-              ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose
-
-              echo "=== Evicting Ghost Context Containers ==="
-              docker rm -f backend frontend node-exporter prometheus grafana prometheus-init grafana-init 2>/dev/null || true
-
               echo "=== Injecting Secure Environment Secrets ==="
               cat <<ENVEOF > /app/terraform-project/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
@@ -368,12 +360,15 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Initializing Application Engine Core Orchestration ==="
               cd /app/terraform-project
+              
+              # Using the direct, unambiguous multi-command tool strategy for modern engine runtimes
+              docker compose down || true
               docker compose up -d
               
               echo "=== Deployment Completed Safely ==="
               EOF
 
-  tags = { Name = "Web-Server-for-${var.user_name}" }
+  tags = { Name = "Web-Server-for-${var.var.user_name}" }
 
   lifecycle {
     create_before_destroy = true
