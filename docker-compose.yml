@@ -59,6 +59,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.retention.time=15d'
       - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-admin-api' # <-- CRITICAL: Enables the safe snapshot engine for your S3 backups!
     depends_on:
       backend:
         condition: service_started
@@ -85,11 +86,15 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=ahmedongrafana.1
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Mount configuration files separately from the raw dashboard files
+      - ./grafana/provisioning/dashboards/default.yml:/etc/grafana/provisioning/dashboards/default.yml:ro
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      # Isolate your node_exporter.json file inside a clean folder path inside the container
+      - ./grafana/provisioning/dashboards/node_exporter.json:/var/lib/grafana/dashboards/node_exporter.json:ro
     depends_on:
       prometheus:
         condition: service_started
