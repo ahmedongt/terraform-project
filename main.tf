@@ -1,5 +1,5 @@
 # ==========================================
-# FILE: main.tf (Modernized Platform Configuration - Fixed Mount Paths)
+# FILE: main.tf (Validated Platform Infrastructure & Fixed Mount Paths)
 # ==========================================
 
 variable "cloudflare_api_token" {}
@@ -84,9 +84,9 @@ resource "aws_eip" "web_eip" {
   }
 }
 
-# 2. THE FIREWALL
+# 2. THE FIREWALL (ASSIGNMENT OPERATOR FIXED HERE)
 resource "aws_security_group" "web_traffic" {
-  name_prefix "allow_web_api_cloudflare-" 
+  name_prefix = "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
 
   ingress {
@@ -207,7 +207,7 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Dynamically Generating Provisioning Infrastructure ==="
               
-              # FIXED PATH: Point provider path to look inside /etc/grafana/provisioning/dashboards/local_files
+              # TARGET DIRECTORY POINTED TO DEFAULT ROOT STORAGE DIRECTORY FOR COHERENCE
               cat << 'DASHBOARD_EOF' > /app/terraform-project/grafana/provisioning/dashboards/all.yml
               apiVersion: 1
               providers:
@@ -218,7 +218,7 @@ resource "aws_instance" "my_web_server" {
                   disableDeletion: false
                   editable: true
                   options:
-                    path: /etc/grafana/provisioning/dashboards/local_files
+                    path: /var/lib/grafana/dashboards
               DASHBOARD_EOF
 
               cat << 'DATASOURCE_EOF' > /app/terraform-project/grafana/provisioning/datasources/prometheus.yml
@@ -231,7 +231,7 @@ resource "aws_instance" "my_web_server" {
                   isDefault: true
               DATASOURCE_EOF
 
-              # Drop the node_exporter dashboard JSON right into our dashboard configuration sync path
+              # Drop the node_exporter dashboard JSON directly into our shared volume dashboard block path
               cat << 'JSON_EOF' > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
               {
                 "annotations": { "list": [] },
@@ -349,8 +349,8 @@ resource "aws_instance" "my_web_server" {
                   volumes:
                     - ./grafana_data:/var/lib/grafana
                     - ./grafana/provisioning:/etc/grafana/provisioning:ro
-                    # FIXED BIND MOUNT: Map host directory into the exact target path for our dashboards
-                    - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards/local_files:ro
+                    # PERFECT VOLUME MAPPING DIRECTLY FOR SYSTEM FILES FINDER
+                    - ./grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
                   depends_on:
                     prometheus:
                       condition: service_started
