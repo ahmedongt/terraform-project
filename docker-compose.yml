@@ -90,11 +90,11 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana_data:/var/lib/grafana
-      # Mount configuration files separately from the raw dashboard files
+      # Maps just the configuration file to the provisioning directory
       - ./grafana/provisioning/dashboards/default.yml:/etc/grafana/provisioning/dashboards/default.yml:ro
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      # Isolate your node_exporter.json file inside a clean folder path inside the container
-      - ./grafana/provisioning/dashboards/node_exporter.json:/var/lib/grafana/dashboards/node_exporter.json:ro
+      # FIX: Mount the whole folder path structure instead of an individual file asset
+      - ./grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       prometheus:
         condition: service_started
