@@ -1,5 +1,5 @@
 # ==========================================
-# FILE: main.tf (Modernized Platform Configuration)
+# FILE: main.tf (Modernized Platform Configuration - Fixed Mount Paths)
 # ==========================================
 
 variable "cloudflare_api_token" {}
@@ -84,9 +84,9 @@ resource "aws_eip" "web_eip" {
   }
 }
 
-# 2. THE FIREWALL (PORT 22 STRIPPED FOR SSM SECURE PROXY)
+# 2. THE FIREWALL
 resource "aws_security_group" "web_traffic" {
-  name_prefix = "allow_web_api_cloudflare-" 
+  name_prefix "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
 
   ingress {
@@ -128,13 +128,12 @@ resource "aws_s3_bucket" "website_bucket" {
   force_destroy = true
 }
 
-# PERSISTENT STORAGE LOCK (Survives infrastructure destruction loops)
 resource "aws_s3_bucket" "monitoring_storage" {
   bucket        = local.monitoring_bucket
   force_destroy = false 
 }
 
-# 4. THE IDENTITY CARD (IAM ROLE & SYSTEMS MANAGER POLICIES)
+# 4. THE IDENTITY CARD
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -174,7 +173,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (BACKED BY HYBRID DYNAMIC CONFIGURATION)
+# 5. THE SERVER
 resource "aws_instance" "my_web_server" {
   ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
@@ -183,7 +182,6 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  # COMPOSING DYNAMIC CONFIGURATIONS AND THE DOCKER ENGINE AT RUNTIME
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
@@ -192,8 +190,6 @@ resource "aws_instance" "my_web_server" {
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-
-              # Create a global fallback symlink so both 'docker compose' and old 'docker-compose' work seamlessly
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
               echo "=== Creating Project Directories ==="
@@ -211,21 +207,20 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Dynamically Generating Provisioning Infrastructure ==="
               
-              # 1. Inject Grafana Dashboard Config Provider
+              # FIXED PATH: Point provider path to look inside /etc/grafana/provisioning/dashboards/local_files
               cat << 'DASHBOARD_EOF' > /app/terraform-project/grafana/provisioning/dashboards/all.yml
               apiVersion: 1
               providers:
                 - name: 'default'
                   orgId: 1
-                  folder: ''
+                  folder: 'Production Systems'
                   type: file
                   disableDeletion: false
                   editable: true
                   options:
-                    path: /var/lib/grafana/dashboards
+                    path: /etc/grafana/provisioning/dashboards/local_files
               DASHBOARD_EOF
 
-              # 2. Inject Grafana Prometheus Data Source Configuration
               cat << 'DATASOURCE_EOF' > /app/terraform-project/grafana/provisioning/datasources/prometheus.yml
               apiVersion: 1
               datasources:
@@ -236,7 +231,7 @@ resource "aws_instance" "my_web_server" {
                   isDefault: true
               DATASOURCE_EOF
 
-              # 3. Inject Your Node Exporter Dashboard JSON File 
+              # Drop the node_exporter dashboard JSON right into our dashboard configuration sync path
               cat << 'JSON_EOF' > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
               {
                 "annotations": { "list": [] },
@@ -260,7 +255,6 @@ resource "aws_instance" "my_web_server" {
               }
               JSON_EOF
 
-              # 4. Inject Dynamic Base Prometheus Config File
               cat << 'PROM_EOF' > /app/terraform-project/prometheus.yml
               global:
                 scrape_interval: 15s
@@ -273,7 +267,6 @@ resource "aws_instance" "my_web_server" {
                     - targets: ['node-exporter:9100']
               PROM_EOF
 
-              # 5. Inject Your Production Docker Compose Setup File Natively
               cat << 'COMPOSE_EOF' > /app/terraform-project/docker-compose.yml
               version: '3.8'
               services:
@@ -356,6 +349,8 @@ resource "aws_instance" "my_web_server" {
                   volumes:
                     - ./grafana_data:/var/lib/grafana
                     - ./grafana/provisioning:/etc/grafana/provisioning:ro
+                    # FIXED BIND MOUNT: Map host directory into the exact target path for our dashboards
+                    - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards/local_files:ro
                   depends_on:
                     prometheus:
                       condition: service_started
@@ -369,7 +364,6 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Initializing Application Engine Core Orchestration ==="
               cd /app/terraform-project
-              
               /usr/local/lib/docker/cli-plugins/docker-compose down || true
               /usr/local/lib/docker/cli-plugins/docker-compose up -d
               
