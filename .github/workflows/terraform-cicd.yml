@@ -124,11 +124,7 @@ jobs:
         with:
           terraform_wrapper: false 
 
-      # === REAL LIFE DevOps PRO SOLUTION: PRE-FLIGHT AUTOMATED LOCK REMOVAL ===
-      - name: Pre-Flight Check: Evict Abandoned S3 State Locks
-        run: |
-          echo "Checking for stale S3 native state locks left behind by interrupted runs..."
-          aws s3 rm s3://kali-terraform-state-storage-2026/state/terraform.tfstate.tflock || echo "No stale lockfile found. State is clean."
+     
 
       # 6. INITIALIZE & PLAN STAGES
       - name: Terraform Init
