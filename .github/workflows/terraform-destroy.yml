@@ -1,13 +1,13 @@
 name: "Terraform Destroy"
 
 on:
-  workflow_dispatch: # This adds a manual "Run" button in GitHub Actions
+  workflow_dispatch:
 
 jobs:
   terraform-destroy:
     name: "Destroy AWS Infra"
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # Prevents the pipeline from hanging forever if a cloud API stalls
+    timeout-minutes: 15
     
     steps:
       - name: Checkout
@@ -31,11 +31,6 @@ jobs:
             -backend-config="bucket=kali-terraform-state-storage-2026" \
             -backend-config="key=state/terraform.tfstate" \
             -backend-config="region=us-east-1"
-
-      # PERMANENT SELF-HEALING: Automatically wipes any dead ghost locks before attempting destroy
-      - name: Pre-Flight Check: Evict Abandoned S3 State Locks
-        run: |
-          aws s3 rm s3://kali-terraform-state-storage-2026/state/terraform.tfstate.tflock || echo "State clean."
 
       - name: Terraform Destroy
         run: |
