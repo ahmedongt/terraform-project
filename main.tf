@@ -174,7 +174,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER (BACKED BY PURE IMMUTABLE INFRASTRUCTURE)
+# 5. THE SERVER (BACKED BY HYBRID DYNAMIC CONFIGURATION)
 resource "aws_instance" "my_web_server" {
   ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
@@ -183,31 +183,177 @@ resource "aws_instance" "my_web_server" {
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
-  # FAST STRUCTURAL BASELINE PREPARATION WITH RUNTIME SECRETS INTERPOLATION
+  # COMPOSING DYNAMIC CONFIGURATIONS AND THE DOCKER ENGINE AT RUNTIME
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-              echo "=== Verifying Persistent Volumes ==="
-              
-              # Ensure empty tracking directories exist for monitoring mount mappings safely
+              echo "=== Creating Project Directories ==="
               mkdir -p /app/terraform-project/prometheus_data
               mkdir -p /app/terraform-project/grafana_data
-              
-              # Set proper ownership for containers to write metrics logs smoothly
-              chown -R 1000:1000 /app/terraform-project
-              chmod -R 755 /app/terraform-project
+              mkdir -p /app/terraform-project/grafana/provisioning/dashboards
+              mkdir -p /app/terraform-project/grafana/provisioning/datasources
 
-              echo "=== Injecting Secure Environment Secrets Natively ==="
+              echo "=== Injecting Secure Environment Secrets ==="
               cat <<ENVEOF > /app/terraform-project/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
               ENVEOF
-
-              # Lock down read/write context parameters for the .env file to ssm-user
               chmod 600 /app/terraform-project/.env
-              chown ssm-user:ssm-user /app/terraform-project/.env
+
+              echo "=== Dynamically Generating Provisioning Infrastructure ==="
               
-              echo "=== Immutable Infrastructure Deployment Confirmed ==="
+              # 1. Inject Grafana Dashboard Config Provider
+              cat << 'DASHBOARD_EOF' > /app/terraform-project/grafana/provisioning/dashboards/all.yml
+              apiVersion: 1
+              providers:
+                - name: 'default'
+                  orgId: 1
+                  folder: ''
+                  type: file
+                  disableDeletion: false
+                  editable: true
+                  options:
+                    path: /etc/grafana/provisioning/dashboards
+              DASHBOARD_EOF
+
+              # 2. Inject Grafana Prometheus Data Source Configuration
+              cat << 'DATASOURCE_EOF' > /app/terraform-project/grafana/provisioning/datasources/prometheus.yml
+              apiVersion: 1
+              datasources:
+                - name: Prometheus
+                  type: prometheus
+                  access: proxy
+                  url: http://prometheus:9090
+                  isDefault: true
+              DATASOURCE_EOF
+
+              # 3. Inject Your Node Exporter Dashboard JSON File 
+              cat << 'JSON_EOF' > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
+              {
+                "annotations": { "list": [] },
+                "editable": true,
+                "fiscalYearStartMonth": 0,
+                "graphTooltip": 0,
+                "id": null,
+                "links": [],
+                "liveNow": false,
+                "panels": [],
+                "refresh": "5s",
+                "schemaVersion": 38,
+                "style": "dark",
+                "tags": [],
+                "time": { "from": "now-1h", "to": "now" },
+                "timepicker": {},
+                "timezone": "",
+                "title": "Node Exporter Dashboard",
+                "version": 1,
+                "weekStart": ""
+              }
+              JSON_EOF
+
+              # 4. Inject Your Production Docker Compose Setup File Natively
+              cat << 'COMPOSE_EOF' > /app/terraform-project/docker-compose.yml
+              version: '3.8'
+              services:
+                backend:
+                  image: devops-backend:latest
+                  container_name: backend
+                  restart: unless-stopped
+                  expose:
+                    - "5000"
+
+                frontend:
+                  image: nginx:alpine
+                  container_name: frontend
+                  restart: unless-stopped
+                  ports:
+                    - "80:80"
+                  depends_on:
+                    - backend
+                  volumes:
+                    - ./website:/usr/share/nginx/html:ro
+                    - ./default.conf:/etc/nginx/conf.d/default.conf:ro
+
+                node-exporter:
+                  image: prom/node-exporter:latest
+                  container_name: node-exporter
+                  restart: unless-stopped
+                  volumes:
+                    - /proc:/host/proc:ro
+                    - /sys:/host/sys:ro
+                    - /:/rootfs:ro
+                  command:
+                    - '--path.procfs=/host/proc'
+                    - '--path.rootfs=/rootfs'
+                    - '--path.sysfs=/host/sys'
+
+                prometheus-init:
+                  image: alpine:latest
+                  container_name: prometheus-init
+                  user: "root"
+                  volumes:
+                    - ./prometheus_data:/prometheus
+                  command: chown -R 65534:65534 /prometheus
+
+                prometheus:
+                  image: prom/prometheus:latest
+                  container_name: prometheus
+                  restart: unless-stopped
+                  ports:
+                    - "9090:9090"
+                  volumes:
+                    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+                    - ./prometheus_data:/prometheus
+                  command:
+                    - '--config.file=/etc/prometheus/prometheus.yml'
+                    - '--storage.tsdb.retention.time=15d'
+                    - '--storage.tsdb.path=/prometheus'
+                  depends_on:
+                    backend:
+                      condition: service_started
+                    node-exporter:
+                      condition: service_started
+                    prometheus-init:
+                      condition: service_completed_successfully
+
+                grafana-init:
+                  image: alpine:latest
+                  container_name: grafana-init
+                  user: "root"
+                  volumes:
+                    - ./grafana_data:/var/lib/grafana
+                  command: chown -R 472:472 /var/lib/grafana
+
+                grafana:
+                  image: grafana/grafana:latest
+                  container_name: grafana
+                  restart: unless-stopped
+                  ports:
+                    - "3000:3000"
+                  environment:
+                    - GF_SECURITY_ADMIN_USER=$${GF_SECURITY_ADMIN_USER}
+                    - GF_SECURITY_ADMIN_PASSWORD=$${GF_SECURITY_ADMIN_PASSWORD}
+                  volumes:
+                    - ./grafana_data:/var/lib/grafana
+                    - ./grafana/provisioning:/etc/grafana/provisioning:ro
+                  depends_on:
+                    prometheus:
+                      condition: service_started
+                    grafana-init:
+                      condition: service_completed_successfully
+              COMPOSE_EOF
+
+              echo "=== Configuring Folder Permissions ==="
+              chown -R ec2-user:ec2-user /app/terraform-project
+              chmod -R 755 /app/terraform-project
+              chown ssm-user:ssm-user /app/terraform-project/.env
+
+              echo "=== Initializing Application Engine Core Orchestration ==="
+              cd /app/terraform-project
+              docker-compose down
+              docker-compose up -d
+              
+              echo "=== Deployment Completed Safely ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
