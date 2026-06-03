@@ -125,6 +125,11 @@ resource "aws_s3_bucket" "website_bucket" {
 resource "aws_s3_bucket" "monitoring_storage" {
   bucket        = local.monitoring_bucket
   force_destroy = false 
+
+  # Prevents 'terraform destroy' from accidentally tearing down this data bucket
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_object" "grafana_dashboard" {
@@ -132,6 +137,11 @@ resource "aws_s3_object" "grafana_dashboard" {
   key    = "dashboards/node_exporter.json"
   source = "${path.module}/grafana/provisioning/dashboards/node_exporter.json"
   etag   = filemd5("${path.module}/grafana/provisioning/dashboards/node_exporter.json")
+
+  # Prevents 'terraform destroy' from wiping out this dashboard config object
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_iam_role" "web_admin_role" {
@@ -218,7 +228,6 @@ resource "aws_instance" "my_web_server" {
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
               echo "=== Aligning Linux Ownership Policies on Host Data Paths ==="
-              # Make sure the config files themselves are globally readable before changing directory owners
               chmod 644 $TARGET_DIR/prometheus.yml
               chmod 644 $TARGET_DIR/default.conf
 
@@ -227,7 +236,6 @@ resource "aws_instance" "my_web_server" {
               chmod -R 775 $TARGET_DIR/prometheus_data
               chmod -R 775 $TARGET_DIR/grafana_data
 
-              # Grant deployment management profile capabilities to base administrative host account
               chown -R ec2-user:ec2-user $TARGET_DIR
               
               echo "=== Orchestrating Self-Healing Application Containers ==="
