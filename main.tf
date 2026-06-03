@@ -183,7 +183,7 @@ resource "aws_instance" "my_web_server" {
 
   user_data = <<-EOF
               #!/bin/bash
-              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/var/log/user-data.log) 2>&1
                
               echo "=== Ensuring Docker Compose Executable is Linked ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
@@ -197,7 +197,6 @@ resource "aws_instance" "my_web_server" {
               mkdir -p $TARGET_DIR
 
               echo "=== Fetching Application Deployment Archive from S3 ==="
-              # Short break to allow upload sync task execution to clear
               sleep 5
               aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
               
@@ -207,22 +206,18 @@ resource "aws_instance" "my_web_server" {
               echo "=== Generating Dedicated Persistent Storage Data Volumes ==="
               mkdir -p $TARGET_DIR/prometheus_data
               mkdir -p $TARGET_DIR/grafana_data
-              mkdir -p $TARGET_DIR/grafana/provisioning/dashboards
-              mkdir -p $TARGET_DIR/grafana/provisioning/datasources
 
               echo "=== Injecting Secure Runtime Variables ==="
-              # Explicitly inject custom workflow values into the container environment space
               cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
               ENVEOF
               chmod 600 $TARGET_DIR/.env
 
-              echo "=== Pulling Node Exporter Dashboard Analytics Map ==="
+              echo "=== Pulling Large Community Dashboard Archive directly from S3 Object Store ==="
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
               echo "=== Aligning Linux Ownership Policies on Host Data Paths ==="
-              # Map local user IDs matching internal container run states precisely
               chown -R 65534:65534 $TARGET_DIR/prometheus_data
               chown -R 472:472 $TARGET_DIR/grafana_data
               chmod -R 775 $TARGET_DIR/prometheus_data
@@ -234,11 +229,9 @@ resource "aws_instance" "my_web_server" {
               echo "=== Orchestrating Self-Healing Application Containers ==="
               cd $TARGET_DIR
               
-              # Clear tracking network frames or hanging snapshot instances
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
-              # Fire orchestration engine task pipelines
               docker-compose down --remove-orphans || true
               docker-compose up -d
                

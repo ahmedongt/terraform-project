@@ -1,91 +1,55 @@
-services:
-  # Python API (Backend)
-  backend:
-    image: devops-backend:latest
-    restart: unless-stopped
-    expose:
-      - "5000"
+version: '3.8'
 
-  # Nginx Web Server (Frontend - Reverse Proxy Interface)
+services:
   frontend:
     image: nginx:alpine
-    restart: unless-stopped
+    container_name: terraform-project-frontend
     ports:
       - "80:80"
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf
+      - ./website:/usr/share/nginx/html
+    restart: always
     depends_on:
       - backend
-    volumes:
-      - ./website:/usr/share/nginx/html:ro
-      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
 
-  # Node Exporter (Optimized Storage Exclusions for Clean Dashboards)
-  node-exporter:
-    image: prom/node-exporter:latest
-    restart: unless-stopped
+  backend:
+    image: ${BACKEND_IMAGE:-python:3.9-slim}
+    container_name: terraform-project-backend
+    expose:
+      - "5000"
+    environment:
+      - FLASK_ENV=production
     volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($|/)'
+      - ./api:/app
+    working_dir: /app
+    command: gunicorn --bind 0.0.0.0:5000 app:app
+    restart: always
 
-  # --- PROMETHEUS STORAGE INITIALIZER ---
-  prometheus-init:
-    image: alpine:latest
-    user: "root"
-    volumes:
-      - ./prometheus_data:/prometheus
-    command: chown -R 65534:65534 /prometheus
-
-  # Prometheus Engine Core
   prometheus:
     image: prom/prometheus:latest
-    restart: unless-stopped
+    container_name: terraform-project-prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'
       - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-admin-api'
-    depends_on:
-      backend:
-        condition: service_started
-      node-exporter:
-        condition: service_started
-      prometheus-init:
-        condition: service_completed_successfully
+    restart: always
 
-  # --- GRAFANA STORAGE INITIALIZER ---
-  grafana-init:
-    image: alpine:latest
-    user: "root"
-    volumes:
-      - ./grafana_data:/var/lib/grafana
-    command: chown -R 472:472 /var/lib/grafana
-
-  # Grafana Dashboard Analytics Subsystem
   grafana:
     image: grafana/grafana:latest
-    restart: unless-stopped
+    container_name: terraform-project-grafana-1
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-ahmedongrafana.1}
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
     volumes:
       - ./grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    restart: always
     depends_on:
-      prometheus:
-        condition: service_started
-      grafana-init:
-        condition: service_completed_successfully
+      - prometheus
