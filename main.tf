@@ -325,8 +325,8 @@ resource "aws_instance" "my_web_server" {
                   ports:
                     - "3000:3000"
                   environment:
-                    - GF_SECURITY_ADMIN_USER=$${GF_SECURITY_ADMIN_USER}
-                    - GF_SECURITY_ADMIN_PASSWORD=$${GF_SECURITY_ADMIN_PASSWORD}
+                    - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
+                    - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
                   volumes:
                     - ./grafana_data:/var/lib/grafana
                     - ./grafana/provisioning:/etc/grafana/provisioning:ro
