@@ -183,7 +183,7 @@ resource "aws_instance" "my_web_server" {
 
   user_data = <<-EOF
               #!/bin/bash
-              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/var/log/user-data.log) 2>&1
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s /var/log/user-data.log) 2>&1
                
               echo "=== Ensuring Docker Compose Executable is Linked ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
@@ -218,6 +218,10 @@ resource "aws_instance" "my_web_server" {
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
               echo "=== Aligning Linux Ownership Policies on Host Data Paths ==="
+              # Make sure the config files themselves are globally readable before changing directory owners
+              chmod 644 $TARGET_DIR/prometheus.yml
+              chmod 644 $TARGET_DIR/default.conf
+
               chown -R 65534:65534 $TARGET_DIR/prometheus_data
               chown -R 472:472 $TARGET_DIR/grafana_data
               chmod -R 775 $TARGET_DIR/prometheus_data
