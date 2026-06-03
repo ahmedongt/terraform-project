@@ -133,6 +133,14 @@ resource "aws_s3_bucket" "monitoring_storage" {
   force_destroy = false 
 }
 
+# NEW RESOURCE: Uploads the heavy 504KB Dashboard straight to your S3 Bucket securely
+resource "aws_s3_object" "grafana_dashboard" {
+  bucket = aws_s3_bucket.monitoring_storage.id
+  key    = "dashboards/node_exporter.json"
+  source = "${path.module}/grafana/provisioning/dashboards/node_exporter.json"
+  etag   = filemd5("${path.module}/grafana/provisioning/dashboards/node_exporter.json")
+}
+
 # 4. THE IDENTITY CARD
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
@@ -231,8 +239,8 @@ resource "aws_instance" "my_web_server" {
                   isDefault: true
               DATASOURCE_EOF
 
-              # Compact Base64 transmission line to deploy the full 504KB dashboard flawlessly
-              echo '${base64encode(file("${path.module}/grafana/provisioning/dashboards/node_exporter.json"))}' | base64 -d > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
+              # S3 BACKTRACK MECHANISM: Pulls the massive dashboard safely via the instance's IAM role profile
+              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
 
               cat << 'PROM_EOF' > /app/terraform-project/prometheus.yml
               global:
