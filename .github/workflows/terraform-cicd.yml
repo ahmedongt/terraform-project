@@ -7,7 +7,6 @@ on:
       - main
       - feature/docker-migration
       - feature/aws-ssm-migration
-    # PERMANENT FIX: Ignore modifications to the destroy file so it never trips this build pipeline
     paths-ignore:
       - 'README.md'
       - '.gitignore'
@@ -21,8 +20,7 @@ jobs:
   packer:
     name: "Packer Image Baking"
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # Prevents hung Packer steps from freezing the pipeline
-    # SPEED OPTIMIZATION: Only boot the heavy 6-minute engine if the core system blueprints actually change!
+    timeout-minutes: 20
     outputs:
       packer_ran: ${{ steps.check_changes.outputs.PACKER_RAN }}
     if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
@@ -30,7 +28,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2 # Fetches current and previous commit to accurately trace file diff mechanics
+          fetch-depth: 2
 
       - name: Check for Core Blueprint System Modifications
         id: check_changes
@@ -69,8 +67,7 @@ jobs:
     name: "Terraform Infrastructure Deploy"
     runs-on: ubuntu-latest
     needs: packer
-    timeout-minutes: 15 # PRODUCTION STANDARD: Surmounts long-term stale locks by killing hung workers
-    # THE SECRET SAUCE: Allows execution to proceed whether Packer ran successfully or was skipped entirely
+    timeout-minutes: 15
     if: |
       always() && 
       (needs.packer.result == 'success' || needs.packer.result == 'skipped') && 
@@ -102,7 +99,7 @@ jobs:
           python -m pytest --cov=api --cov-report=xml:coverage.xml api/
         continue-on-error: true
 
-      # 3. SONARCLOUD SCAN (FIXED AUTHENTICATION HOST TARGETING)
+      # 3. SONARCLOUD SCAN
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:

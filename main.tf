@@ -192,164 +192,55 @@ resource "aws_instance" "my_web_server" {
 
   user_data = <<-EOF
               #!/bin/bash
+              # Route runtime standard output tracking securely to system logs
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
                
-              echo "=== Downloading Standalone Docker Compose Engine Subsystem ==="
+              echo "=== Verifying and Ensuring Standalone Docker Compose Subsystem ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
-              echo "=== Creating Project Directories ==="
-              mkdir -p /app/terraform-project/prometheus_data
-              mkdir -p /app/terraform-project/grafana_data
-              mkdir -p /app/terraform-project/grafana/provisioning/dashboards
-              mkdir -p /app/terraform-project/grafana/provisioning/datasources
+              echo "=== Initializing Production Workspace Targets ==="
+              TARGET_DIR="/app/terraform-project"
+              mkdir -p $TARGET_DIR/prometheus_data
+              mkdir -p $TARGET_DIR/grafana_data
+              mkdir -p $TARGET_DIR/grafana/provisioning/dashboards
+              mkdir -p $TARGET_DIR/grafana/provisioning/datasources
 
-              echo "=== Injecting Secure Environment Secrets ==="
-              cat <<ENVEOF > /app/terraform-project/.env
+              echo "=== Injecting Core Secure Environment Variables ==="
+              cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
               ENVEOF
-              chmod 600 /app/terraform-project/.env
+              chmod 600 $TARGET_DIR/.env
 
-              echo "=== Dynamically Generating Provisioning Infrastructure ==="
-               
-              cat << 'DASHBOARD_EOF' > /app/terraform-project/grafana/provisioning/dashboards/all.yml
-              apiVersion: 1
-              providers:
-                - name: 'default'
-                  orgId: 1
-                  folder: 'Production Systems'
-                  type: file
-                  disableDeletion: false
-                  editable: true
-                  options:
-                    path: /var/lib/grafana/dashboards
-              DASHBOARD_EOF
+              echo "=== Fetching Dynamic Configuration Map Components ==="
+              # Fetch matching dashboard json from tracking S3 architecture bucket
+              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
-              cat << 'DATASOURCE_EOF' > /app/terraform-project/grafana/provisioning/datasources/prometheus.yml
-              apiVersion: 1
-              datasources:
-                - name: Prometheus
-                  type: prometheus
-                  access: proxy
-                  url: http://prometheus:9090
-                  isDefault: true
-              DATASOURCE_EOF
+              echo "=== Applying Rigid Storage Permission Policies ==="
+              # Fix host file locks explicitly before firing up the engines
+              chown -R 65534:65534 $TARGET_DIR/prometheus_data
+              chown -R 472:472 $TARGET_DIR/grafana_data
+              chmod -R 775 $TARGET_DIR/prometheus_data
+              chmod -R 775 $TARGET_DIR/grafana_data
 
-              # S3 BACKTRACK MECHANISM: Pulls the dashboard via IAM role profile
-              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
-
-              cat << 'PROM_EOF' > /app/terraform-project/prometheus.yml
-              global:
-                scrape_interval: 15s
-              scrape_configs:
-                - job_name: 'prometheus'
-                  static_configs:
-                    - targets: ['localhost:9090']
-                - job_name: 'node-exporter'
-                  static_configs:
-                    - targets: ['node-exporter:9100']
-              PROM_EOF
-
-              cat << 'COMPOSE_EOF' > /app/terraform-project/docker-compose.yml
-              services:
-                backend:
-                  image: devops-backend:latest
-                  restart: unless-stopped
-                  expose:
-                    - "5000"
-
-                frontend:
-                  image: nginx:alpine
-                  restart: unless-stopped
-                  ports:
-                    - "80:80"
-                  depends_on:
-                    - backend
-
-                node-exporter:
-                  image: prom/node-exporter:latest
-                  restart: unless-stopped
-                  volumes:
-                    - /proc:/host/proc:ro
-                    - /sys:/host/sys:ro
-                    - /:/rootfs:ro
-                  command:
-                    - '--path.procfs=/host/proc'
-                    - '--path.rootfs=/rootfs'
-                    - '--path.sysfs=/host/sys'
-
-                prometheus-init:
-                  image: alpine:latest
-                  user: "root"
-                  volumes:
-                    - ./prometheus_data:/prometheus
-                  command: chown -R 65534:65534 /prometheus
-
-                prometheus:
-                  image: prom/prometheus:latest
-                  restart: unless-stopped
-                  ports:
-                    - "9090:9090"
-                  volumes:
-                    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-                    - ./prometheus_data:/prometheus
-                  command:
-                    - '--config.file=/etc/prometheus/prometheus.yml'
-                    - '--storage.tsdb.retention.time=15d'
-                    - '--storage.tsdb.path=/prometheus'
-                    - '--web.enable-admin-api'
-                  depends_on:
-                    backend:
-                      condition: service_started
-                    node-exporter:
-                      condition: service_started
-                    prometheus-init:
-                      condition: service_completed_successfully
-
-                grafana-init:
-                  image: alpine:latest
-                  user: "root"
-                  volumes:
-                    - ./grafana_data:/var/lib/grafana
-                  command: chown -R 472:472 /var/lib/grafana
-
-                grafana:
-                  image: grafana/grafana:latest
-                  restart: unless-stopped
-                  ports:
-                    - "3000:3000"
-                  environment:
-                    - GF_SECURITY_ADMIN_USER=${var.grafana_admin_user}
-                    - GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}
-                  volumes:
-                    - ./grafana_data:/var/lib/grafana
-                    - ./grafana/provisioning:/etc/grafana/provisioning:ro
-                    - ./grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
-                  depends_on:
-                    prometheus:
-                      condition: service_started
-                    grafana-init:
-                      condition: service_completed_successfully
-              COMPOSE_EOF
-
-              echo "=== Configuring Folder Permissions ==="
-              chown -R ec2-user:ec2-user /app/terraform-project
-              chmod -R 755 /app/terraform-project
-
-              echo "=== Initializing Application Engine Core Orchestration ==="
-              cd /app/terraform-project
+              # Grant deployment execution scope mapping permissions to default user profiles
+              chown -R ec2-user:ec2-user $TARGET_DIR
               
-              # FORCE SCRUB STALE CONFUSING GHOSTS LEFT ON THE PACKER BASE SNAPSHOT BEFORE RE-LAUNCHING
+              echo "=== Initializing Execution Orchestration Layer ==="
+              cd $TARGET_DIR
+              
+              # Force clear any background ghosts left on snapshot snapshots cleanly
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
-              /usr/local/lib/docker/cli-plugins/docker-compose down || true
-              /usr/local/lib/docker/cli-plugins/docker-compose up -d
+              # Fire the production engine tracks down and up completely hands-free
+              docker-compose down --remove-orphans || true
+              docker-compose up -d
                
-              echo "=== Deployment Completed Safely ==="
+              echo "=== System Deployment Engine Tasks Complete ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
