@@ -231,10 +231,8 @@ resource "aws_instance" "my_web_server" {
                   isDefault: true
               DATASOURCE_EOF
 
-              # Dynamically pulling your real production file directly from your local repository path
-              cat << 'JSON_EOF' > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
-              ${file("${path.module}/grafana/provisioning/dashboards/node_exporter.json")}
-              JSON_EOF
+              # Compact Base64 transmission line to deploy the full 504KB dashboard flawlessly
+              echo '${base64encode(file("${path.module}/grafana/provisioning/dashboards/node_exporter.json"))}' | base64 -d > /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
 
               cat << 'PROM_EOF' > /app/terraform-project/prometheus.yml
               global:
@@ -325,8 +323,8 @@ resource "aws_instance" "my_web_server" {
                   ports:
                     - "3000:3000"
                   environment:
-                    - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
-                    - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
+                    - GF_SECURITY_ADMIN_USER=$$GF_SECURITY_ADMIN_USER
+                    - GF_SECURITY_ADMIN_PASSWORD=$$GF_SECURITY_ADMIN_PASSWORD
                   volumes:
                     - ./grafana_data:/var/lib/grafana
                     - ./grafana/provisioning:/etc/grafana/provisioning:ro
