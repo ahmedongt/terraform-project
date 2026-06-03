@@ -84,7 +84,7 @@ resource "aws_eip" "web_eip" {
   }
 }
 
-# 2. THE FIREWALL (ASSIGNMENT OPERATOR FIXED HERE)
+# 2. THE FIREWALL
 resource "aws_security_group" "web_traffic" {
   name_prefix = "allow_web_api_cloudflare-" 
   description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
@@ -133,7 +133,7 @@ resource "aws_s3_bucket" "monitoring_storage" {
   force_destroy = false 
 }
 
-# NEW RESOURCE: Uploads the heavy 504KB Dashboard straight to your S3 Bucket securely
+# Uploads Dashboard to S3 Bucket securely
 resource "aws_s3_object" "grafana_dashboard" {
   bucket = aws_s3_bucket.monitoring_storage.id
   key    = "dashboards/node_exporter.json"
@@ -215,7 +215,6 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Dynamically Generating Provisioning Infrastructure ==="
                
-              # TARGET DIRECTORY POINTED TO DEFAULT ROOT STORAGE DIRECTORY FOR COHERENCE
               cat << 'DASHBOARD_EOF' > /app/terraform-project/grafana/provisioning/dashboards/all.yml
               apiVersion: 1
               providers:
@@ -239,7 +238,7 @@ resource "aws_instance" "my_web_server" {
                   isDefault: true
               DATASOURCE_EOF
 
-              # S3 BACKTRACK MECHANISM: Pulls the massive dashboard safely via the instance's IAM role profile
+              # S3 BACKTRACK MECHANISM: Pulls the dashboard via IAM role profile
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json /app/terraform-project/grafana/provisioning/dashboards/node_exporter.json
 
               cat << 'PROM_EOF' > /app/terraform-project/prometheus.yml
@@ -255,7 +254,6 @@ resource "aws_instance" "my_web_server" {
               PROM_EOF
 
               cat << 'COMPOSE_EOF' > /app/terraform-project/docker-compose.yml
-              version: '3.8'
               services:
                 backend:
                   image: devops-backend:latest
@@ -324,8 +322,8 @@ resource "aws_instance" "my_web_server" {
                   ports:
                     - "3000:3000"
                   environment:
-                    - GF_SECURITY_ADMIN_USER=$$GF_SECURITY_ADMIN_USER
-                    - GF_SECURITY_ADMIN_PASSWORD=$$GF_SECURITY_ADMIN_PASSWORD
+                    - GF_SECURITY_ADMIN_USER=${var.grafana_admin_user}
+                    - GF_SECURITY_ADMIN_PASSWORD=${var.grafana_admin_password}
                   volumes:
                     - ./grafana_data:/var/lib/grafana
                     - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -345,8 +343,8 @@ resource "aws_instance" "my_web_server" {
               cd /app/terraform-project
               
               # FORCE SCRUB STALE CONFUSING GHOSTS LEFT ON THE PACKER BASE SNAPSHOT BEFORE RE-LAUNCHING
-              docker rm -f backend frontend node-exporter prometheus prometheus-init grafana-init grafana 2>/dev/null || true
-              docker network rm terraform-project_default 2>/dev/null || true
+              docker rm -f $(docker ps -aq) 2>/dev/null || true
+              docker network prune -f || true
 
               /usr/local/lib/docker/cli-plugins/docker-compose down || true
               /usr/local/lib/docker/cli-plugins/docker-compose up -d
