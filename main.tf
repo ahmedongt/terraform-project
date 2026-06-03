@@ -259,14 +259,12 @@ resource "aws_instance" "my_web_server" {
               services:
                 backend:
                   image: devops-backend:latest
-                  container_name: backend
                   restart: unless-stopped
                   expose:
                     - "5000"
 
                 frontend:
                   image: nginx:alpine
-                  container_name: frontend
                   restart: unless-stopped
                   ports:
                     - "80:80"
@@ -275,7 +273,6 @@ resource "aws_instance" "my_web_server" {
 
                 node-exporter:
                   image: prom/node-exporter:latest
-                  container_name: node-exporter
                   restart: unless-stopped
                   volumes:
                     - /proc:/host/proc:ro
@@ -288,7 +285,6 @@ resource "aws_instance" "my_web_server" {
 
                 prometheus-init:
                   image: alpine:latest
-                  container_name: prometheus-init
                   user: "root"
                   volumes:
                     - ./prometheus_data:/prometheus
@@ -296,7 +292,6 @@ resource "aws_instance" "my_web_server" {
 
                 prometheus:
                   image: prom/prometheus:latest
-                  container_name: prometheus
                   restart: unless-stopped
                   ports:
                     - "9090:9090"
@@ -318,7 +313,6 @@ resource "aws_instance" "my_web_server" {
 
                 grafana-init:
                   image: alpine:latest
-                  container_name: grafana-init
                   user: "root"
                   volumes:
                     - ./grafana_data:/var/lib/grafana
@@ -326,7 +320,6 @@ resource "aws_instance" "my_web_server" {
 
                 grafana:
                   image: grafana/grafana:latest
-                  container_name: grafana
                   restart: unless-stopped
                   ports:
                     - "3000:3000"
@@ -350,6 +343,11 @@ resource "aws_instance" "my_web_server" {
 
               echo "=== Initializing Application Engine Core Orchestration ==="
               cd /app/terraform-project
+              
+              # FORCE SCRUB STALE CONFUSING GHOSTS LEFT ON THE PACKER BASE SNAPSHOT BEFORE RE-LAUNCHING
+              docker rm -f backend frontend node-exporter prometheus prometheus-init grafana-init grafana 2>/dev/null || true
+              docker network rm terraform-project_default 2>/dev/null || true
+
               /usr/local/lib/docker/cli-plugins/docker-compose down || true
               /usr/local/lib/docker/cli-plugins/docker-compose up -d
                
