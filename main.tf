@@ -1,5 +1,5 @@
 # ==========================================
-# FILE: main.tf (Validated Platform Infrastructure & Fixed Mount Paths)
+# FILE: main.tf (Production Automated Zero-Touch Deployment)
 # ==========================================
 
 variable "cloudflare_api_token" {}
@@ -8,7 +8,6 @@ variable "user_name" {}
 variable "domain_name" {}
 variable "instance_type" {}
 
-# SECURE INJECTED VARIABLES FROM GITHUB RUNNER
 variable "grafana_admin_user" {
   type      = string
   sensitive = true
@@ -52,12 +51,10 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# --- AUTOMATED CLOUDFLARE IP FETCHING ---
 data "http" "cloudflare_ips" {
   url = "https://api.cloudflare.com/client/v4/ips"
 }
 
-# --- DYNAMICALLY LOCATE THE LATEST PACKER GOLDEN IMAGE ---
 data "aws_ami" "packer_golden_image" {
   most_recent = true
   owners      = ["self"]
@@ -74,7 +71,6 @@ locals {
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
-# 1. THE PERMANENT IP (ELASTIC IP)
 resource "aws_eip" "web_eip" {
   instance = aws_instance.my_web_server.id
   domain   = "vpc"
@@ -84,10 +80,9 @@ resource "aws_eip" "web_eip" {
   }
 }
 
-# 2. THE FIREWALL
 resource "aws_security_group" "web_traffic" {
   name_prefix = "allow_web_api_cloudflare-" 
-  description = "80/443 (Cloudflare), 5000 (API) - PORT 22 STRIPPED FOR SSM SECURE PROXY"
+  description = "Managed reverse proxy entry points - 80/443 (Cloudflare), 5000 (API)"
 
   ingress {
     from_port   = 80
@@ -122,7 +117,6 @@ resource "aws_security_group" "web_traffic" {
   }
 }
 
-# 3. THE STORAGE BUCKETS
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
@@ -133,7 +127,6 @@ resource "aws_s3_bucket" "monitoring_storage" {
   force_destroy = false 
 }
 
-# Uploads Dashboard to S3 Bucket securely
 resource "aws_s3_object" "grafana_dashboard" {
   bucket = aws_s3_bucket.monitoring_storage.id
   key    = "dashboards/node_exporter.json"
@@ -141,7 +134,6 @@ resource "aws_s3_object" "grafana_dashboard" {
   etag   = filemd5("${path.module}/grafana/provisioning/dashboards/node_exporter.json")
 }
 
-# 4. THE IDENTITY CARD
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -181,7 +173,6 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-# 5. THE SERVER
 resource "aws_instance" "my_web_server" {
   ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
@@ -192,55 +183,66 @@ resource "aws_instance" "my_web_server" {
 
   user_data = <<-EOF
               #!/bin/bash
-              # Route runtime standard output tracking securely to system logs
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
                
-              echo "=== Verifying and Ensuring Standalone Docker Compose Subsystem ==="
+              echo "=== Ensuring Docker Compose Executable is Linked ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
 
-              echo "=== Initializing Production Workspace Targets ==="
+              echo "=== Re-initializing Project Directory Structure ==="
               TARGET_DIR="/app/terraform-project"
+              rm -rf $TARGET_DIR
+              mkdir -p $TARGET_DIR
+
+              echo "=== Fetching Application Deployment Archive from S3 ==="
+              # Short break to allow upload sync task execution to clear
+              sleep 5
+              aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
+              
+              echo "=== Extracting Payload Bundle Configuration Map ==="
+              tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
+              
+              echo "=== Generating Dedicated Persistent Storage Data Volumes ==="
               mkdir -p $TARGET_DIR/prometheus_data
               mkdir -p $TARGET_DIR/grafana_data
               mkdir -p $TARGET_DIR/grafana/provisioning/dashboards
               mkdir -p $TARGET_DIR/grafana/provisioning/datasources
 
-              echo "=== Injecting Core Secure Environment Variables ==="
+              echo "=== Injecting Secure Runtime Variables ==="
+              # Explicitly inject custom workflow values into the container environment space
               cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
               ENVEOF
               chmod 600 $TARGET_DIR/.env
 
-              echo "=== Fetching Dynamic Configuration Map Components ==="
-              # Fetch matching dashboard json from tracking S3 architecture bucket
+              echo "=== Pulling Node Exporter Dashboard Analytics Map ==="
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
-              echo "=== Applying Rigid Storage Permission Policies ==="
-              # Fix host file locks explicitly before firing up the engines
+              echo "=== Aligning Linux Ownership Policies on Host Data Paths ==="
+              # Map local user IDs matching internal container run states precisely
               chown -R 65534:65534 $TARGET_DIR/prometheus_data
               chown -R 472:472 $TARGET_DIR/grafana_data
               chmod -R 775 $TARGET_DIR/prometheus_data
               chmod -R 775 $TARGET_DIR/grafana_data
 
-              # Grant deployment execution scope mapping permissions to default user profiles
+              # Grant deployment management profile capabilities to base administrative host account
               chown -R ec2-user:ec2-user $TARGET_DIR
               
-              echo "=== Initializing Execution Orchestration Layer ==="
+              echo "=== Orchestrating Self-Healing Application Containers ==="
               cd $TARGET_DIR
               
-              # Force clear any background ghosts left on snapshot snapshots cleanly
+              # Clear tracking network frames or hanging snapshot instances
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
-              # Fire the production engine tracks down and up completely hands-free
+              # Fire orchestration engine task pipelines
               docker-compose down --remove-orphans || true
               docker-compose up -d
                
-              echo "=== System Deployment Engine Tasks Complete ==="
+              echo "=== Bootstrap Lifecycle Process Terminated Cleanly ==="
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
@@ -250,7 +252,6 @@ resource "aws_instance" "my_web_server" {
   }
 }
 
-# 6. THE DNS BRIDGE
 resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
@@ -267,7 +268,6 @@ resource "cloudflare_record" "www_dns" {
   proxied = true
 }
 
-# 7. OUTPUTS
 output "monitoring_bucket_name" {
   value = aws_s3_bucket.monitoring_storage.id
 }
@@ -282,5 +282,5 @@ output "server_ip" {
 
 output "ec2_instance_id" {
   value       = aws_instance.my_web_server.id
-  description = "The target AWS Instance ID for Session Manager mapping"
+  description = "Target reference for secure AWS Session Manager sessions"
 }

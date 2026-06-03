@@ -74,13 +74,11 @@ jobs:
       (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
     
     steps:
-      # 1. CHECKOUT CODE
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. SETUP PYTHON & RUN TESTS
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -99,7 +97,6 @@ jobs:
           python -m pytest --cov=api --cov-report=xml:coverage.xml api/
         continue-on-error: true
 
-      # 3. SONARCLOUD SCAN
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
@@ -109,7 +106,6 @@ jobs:
           args: >
             -Dsonar.host.url=https://sonarcloud.io
 
-      # 4. AUTHENTICATE WITH AWS
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -117,13 +113,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # 5. SETUP TERRAFORM ENGINE
+      # INDUSTRY STANDARD: Bundle runtime configuration descriptors and push to S3 before orchestration deployment
+      - name: Package and Publish App Configurations to S3
+        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+        run: |
+          echo "=== Archiving deployment descriptors ==="
+          tar -czf app-payload.tar.gz docker-compose.yml default.conf prometheus.yml website/
+          
+          echo "=== Shipping secure payload bundle to configuration staging bucket ==="
+          aws s3 cp app-payload.tar.gz s3://monitoring-configs-and-stats-kali/deployments/app-payload.tar.gz
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false 
 
-      # 6. INITIALIZE & PLAN STAGES
       - name: Terraform Init
         run: |
           terraform init \
@@ -150,7 +154,6 @@ jobs:
         run: |
           terraform plan
 
-      # 7. APPLY INFRASTRUCTURE CONFIGURATIONS
       - name: Terraform Apply
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         env:
