@@ -113,12 +113,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # INDUSTRY STANDARD: Bundle runtime configuration descriptors and push to S3 before orchestration deployment
+      # FIXED: Included the grafana/ layout folder explicitly within the tar stream bundle execution 
       - name: Package and Publish App Configurations to S3
         if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
           echo "=== Archiving deployment descriptors ==="
-          tar -czf app-payload.tar.gz docker-compose.yml default.conf prometheus.yml website/
+          tar -czf app-payload.tar.gz docker-compose.yml default.conf prometheus.yml website/ grafana/
           
           echo "=== Shipping secure payload bundle to configuration staging bucket ==="
           aws s3 cp app-payload.tar.gz s3://monitoring-configs-and-stats-kali/deployments/app-payload.tar.gz
