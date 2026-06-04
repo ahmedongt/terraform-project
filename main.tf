@@ -138,10 +138,10 @@ resource "aws_s3_object" "grafana_dashboard" {
   source = "${path.module}/grafana/provisioning/dashboards/node_exporter.json"
   etag   = filemd5("${path.module}/grafana/provisioning/dashboards/node_exporter.json")
 
-  # Prevents 'terraform destroy' from wiping out this dashboard config object
-  lifecycle {
-    prevent_destroy = true
-  }
+  # TEMPORARILY DISABLED: Allows clean object re-creation
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "aws_iam_role" "web_admin_role" {
