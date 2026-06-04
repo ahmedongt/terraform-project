@@ -78,7 +78,7 @@ locals {
 resource "aws_ecr_repository" "devops_backend" {
   name                 = "devops-backend"
   image_tag_mutability = "MUTABLE"
-  force_destroy        = true
+  force_delete        = true
 
   image_scanning_configuration {
     scan_on_push = true
