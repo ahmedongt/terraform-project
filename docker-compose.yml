@@ -14,16 +14,12 @@ services:
       - backend
 
   backend:
-    image: ${BACKEND_IMAGE:-python:3.9-slim}
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest
     container_name: terraform-project-backend
     expose:
       - "5000"
     environment:
       - FLASK_ENV=production
-    volumes:
-      - ./api:/app
-    working_dir: /app
-    command: gunicorn --bind 0.0.0.0:5000 app:app
     restart: always
 
   prometheus:

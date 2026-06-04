@@ -12,7 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. Copy requirements (Read-only for Sonar compliance)
-# FIX: Split --chmod out to remain compatible with legacy Docker engines
 COPY --chown=user-1:user-1 requirements.txt .
 USER root
 RUN chmod 444 requirements.txt
@@ -22,7 +21,6 @@ ENV PIP_NO_CACHE_DIR=1
 ENV PATH="/home/user-1/.local/bin:${PATH}"
 
 # 5. Install dependencies as user-1
-# FIX: Added --only-binary=:all: to prevent execution of setup scripts
 USER user-1
 RUN pip install --no-cache-dir --user --only-binary=:all: -r requirements.txt
 
@@ -33,7 +31,6 @@ RUN mkdir -p /app/downloads /app/static && \
     chmod -R 755 /app/downloads /app/static
 
 # 7. Copy app code as READ-ONLY (Fixes "Make sure no write permissions are assigned")
-# FIX: Split --chmod out here as well to protect the legacy build engine
 COPY --chown=user-1:user-1 app.py .
 USER root
 RUN chmod 444 app.py
@@ -43,5 +40,5 @@ USER user-1
 
 EXPOSE 5000
 
-# Using absolute path to the user-installed python binary can sometimes prevent path issues
-CMD ["python", "app.py"]
+# Execute via production-grade Gunicorn server natively inside the image
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]

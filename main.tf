@@ -51,6 +51,9 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# Dynamically fetches your current AWS Account ID
+data "aws_caller_identity" "current" {}
+
 data "http" "cloudflare_ips" {
   url = "https://api.cloudflare.com/client/v4/ips"
 }
@@ -69,6 +72,17 @@ locals {
   cloudflare_ipv4   = jsondecode(data.http.cloudflare_ips.response_body).result.ipv4_cidrs
   safe_user_name    = lower(replace(var.user_name, " ", "-"))
   monitoring_bucket = "monitoring-configs-and-stats-kali"
+}
+
+# Create the Private ECR Registry for your Backend Image
+resource "aws_ecr_repository" "devops_backend" {
+  name                 = "devops-backend"
+  image_tag_mutability = "MUTABLE"
+  force_destroy        = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
 }
 
 resource "aws_eip" "web_eip" {
@@ -156,6 +170,12 @@ resource "aws_iam_role_policy_attachment" "ssm_core_attach" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Attach Read-Only ECR permissions to the Web Server Role
+resource "aws_iam_role_policy_attachment" "ecr_readonly_attach" {
+  role       = aws_iam_role.web_admin_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_instance_profile" "web_instance_profile" {
   name = "web_instance_profile_${local.safe_user_name}"
   role = aws_iam_role.web_admin_role.name
@@ -199,6 +219,7 @@ resource "aws_instance" "my_web_server" {
               cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
+              AWS_ACCOUNT_ID='${data.aws_caller_identity.current.account_id}'
               ENVEOF
               chmod 600 $TARGET_DIR/.env
 
@@ -222,7 +243,15 @@ resource "aws_instance" "my_web_server" {
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
-              docker-compose down --remove-orphans || true
+              echo "=== Authenticating Docker to Amazon ECR ==="
+              aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.us-east-1.amazonaws.com
+
+              echo "=== Waiting for GitHub Actions to push the Backend Image... ==="
+              until docker-compose pull; do
+                echo "Image not found yet. Retrying in 10 seconds..."
+                sleep 10
+              done
+
               docker-compose up -d
                
               echo "=== Bootstrap Lifecycle Process Terminated Cleanly ==="

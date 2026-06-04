@@ -7,6 +7,7 @@ on:
       - main
       - feature/docker-migration
       - feature/aws-ssm-migration
+      - feature/automate-ecr-builds
     paths-ignore:
       - 'README.md'
       - '.gitignore'
@@ -23,7 +24,7 @@ jobs:
     timeout-minutes: 20
     outputs:
       packer_ran: ${{ steps.check_changes.outputs.PACKER_RAN }}
-    if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
+    if: github.event_name == 'push'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -71,7 +72,7 @@ jobs:
     if: |
       always() && 
       (needs.packer.result == 'success' || needs.packer.result == 'skipped') && 
-      (github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+      github.event_name == 'push'
     
     steps:
       - name: Checkout
@@ -113,9 +114,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: "us-east-1"
 
-      # FIXED: Included the grafana/ layout folder explicitly within the tar stream bundle execution 
       - name: Package and Publish App Configurations to S3
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         run: |
           echo "=== Archiving deployment descriptors ==="
           tar -czf app-payload.tar.gz docker-compose.yml default.conf prometheus.yml website/ grafana/
@@ -155,7 +154,6 @@ jobs:
           terraform plan
 
       - name: Terraform Apply
-        if: (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && github.event_name == 'push'
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
@@ -167,3 +165,18 @@ jobs:
           TF_VAR_instance_type: "t3.micro"
         run: |
           terraform apply -auto-approve
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Backend Image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: devops-backend
+          IMAGE_TAG: latest
+        run: |
+          echo "Building Python Application Container..."
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./api
+          echo "Pushing Immutable Artifact to Private AWS ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
