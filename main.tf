@@ -122,28 +122,6 @@ resource "aws_s3_bucket" "website_bucket" {
   force_destroy = true
 }
 
-resource "aws_s3_bucket" "monitoring_storage" {
-  bucket        = local.monitoring_bucket
-  force_destroy = false 
-
-  # Prevents 'terraform destroy' from accidentally tearing down this data bucket
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "aws_s3_object" "grafana_dashboard" {
-  bucket = aws_s3_bucket.monitoring_storage.id
-  key    = "dashboards/node_exporter.json"
-  source = "${path.module}/grafana/provisioning/dashboards/node_exporter.json"
-  etag   = filemd5("${path.module}/grafana/provisioning/dashboards/node_exporter.json")
-
-  # TEMPORARILY DISABLED: Allows clean object re-creation
-  # lifecycle {
-  #   prevent_destroy = true
-  # }
-}
-
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -165,8 +143,8 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
         Resource = [
           "${aws_s3_bucket.website_bucket.arn}", 
           "${aws_s3_bucket.website_bucket.arn}/*",
-          "${aws_s3_bucket.monitoring_storage.arn}",
-          "${aws_s3_bucket.monitoring_storage.arn}/*"
+          "arn:aws:s3:::${local.monitoring_bucket}",
+          "arn:aws:s3:::${local.monitoring_bucket}/*"
         ]
       }
     ]
@@ -209,10 +187,10 @@ resource "aws_instance" "my_web_server" {
               echo "=== Fetching Application Deployment Archive from S3 ==="
               sleep 5
               aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
-              
+               
               echo "=== Extracting Payload Bundle Configuration Map ==="
               tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
-              
+               
               echo "=== Generating Dedicated Persistent Storage Data Volumes ==="
               mkdir -p $TARGET_DIR/prometheus_data
               mkdir -p $TARGET_DIR/grafana_data
@@ -237,10 +215,10 @@ resource "aws_instance" "my_web_server" {
               chmod -R 775 $TARGET_DIR/grafana_data
 
               chown -R ec2-user:ec2-user $TARGET_DIR
-              
+               
               echo "=== Orchestrating Self-Healing Application Containers ==="
               cd $TARGET_DIR
-              
+               
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
@@ -274,7 +252,7 @@ resource "cloudflare_record" "www_dns" {
 }
 
 output "monitoring_bucket_name" {
-  value = aws_s3_bucket.monitoring_storage.id
+  value = local.monitoring_bucket
 }
 
 output "website_url" {
