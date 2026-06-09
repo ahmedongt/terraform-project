@@ -8,6 +8,7 @@ on:
       - feature/docker-migration
       - feature/aws-ssm-migration
       - feature/automate-ecr-builds
+      - vpc-migration
     paths-ignore:
       - 'README.md'
       - '.gitignore'
