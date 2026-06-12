@@ -171,7 +171,7 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s /var/log/user-data.log) 2>&1
-              
+               
               echo "=== Ensuring Docker Compose Executable is Linked ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
@@ -186,10 +186,10 @@ resource "aws_instance" "my_web_server" {
               echo "=== Fetching Application Deployment Archive from S3 ==="
               sleep 5
               aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
-              
+               
               echo "=== Extracting Payload Bundle Configuration Map ==="
               tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
-              
+               
               echo "=== Generating Dedicated Persistent Storage Data Volumes ==="
               mkdir -p $TARGET_DIR/prometheus_data
               mkdir -p $TARGET_DIR/grafana_data
@@ -215,10 +215,10 @@ resource "aws_instance" "my_web_server" {
               chmod -R 775 $TARGET_DIR/grafana_data
 
               chown -R ec2-user:ec2-user $TARGET_DIR
-              
+               
               echo "=== Orchestrating Self-Healing Application Containers ==="
               cd $TARGET_DIR
-              
+               
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
@@ -232,7 +232,7 @@ resource "aws_instance" "my_web_server" {
               done
 
               docker-compose up -d
-              
+               
               echo "=== Bootstrap Lifecycle Process Terminated Cleanly ==="
               EOF
 
