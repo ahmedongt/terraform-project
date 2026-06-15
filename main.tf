@@ -1,6 +1,6 @@
-# ==========================================
+# ====================================================================
 # FILE: main.tf (Production Automated Zero-Touch Deployment)
-# ==========================================
+# ====================================================================
 
 variable "cloudflare_api_token" {}
 variable "cloudflare_zone_id" {}
@@ -73,14 +73,11 @@ locals {
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
-resource "aws_ecr_repository" "devops_backend" {
-  name                 = "devops-backend"
-  image_tag_mutability = "MUTABLE"
-  force_delete         = true
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
+# ====================================================================
+# INDUSTRY STANDARD DECOUPLING: ECR IS NOW A READ-ONLY DATA DEPENDENCY
+# ====================================================================
+data "aws_ecr_repository" "devops_backend" {
+  name = "devops-backend"
 }
 
 resource "aws_eip" "web_eip" {
