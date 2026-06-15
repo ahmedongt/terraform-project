@@ -188,70 +188,77 @@ resource "aws_instance" "my_web_server" {
 
   user_data = <<-EOF
               #!/bin/bash
-              exec > >(tee /var/log/user-data.log|logger -t user-data -s /var/log/user-data.log) 2>&1
+              # Fail-fast: exit script on any command failure
+              set -e 
               
-              echo "=== Ensuring Docker Compose Executable is Linked ==="
+              # Log everything to user-data.log
+              exec > >(tee /var/log/user-data.log) 2>&1
+              
+              echo "--- Starting Deployment ---"
+              
+              # Function to check command success
+              check_success() {
+                  if [ $? -eq 0 ]; then
+                      echo "SUCCESS: $1"
+                  else
+                      echo "ERROR: $1 failed!"
+                      exit 1
+                  fi
+              }
+
+              # 1. Setup Docker Compose
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
+              check_success "Docker Compose Installation"
 
-              echo "=== Re-initializing Project Directory Structure ==="
+              # 2. Fetch Payload
               TARGET_DIR="/app/terraform-project"
               rm -rf $TARGET_DIR
               mkdir -p $TARGET_DIR
-
-              echo "=== Fetching Application Deployment Archive from S3 ==="
               sleep 5
               aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
-              
-              echo "=== Extracting Payload Bundle Configuration Map ==="
               tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
-              
-              echo "=== Generating Dedicated Persistent Storage Data Volumes ==="
+              check_success "S3 Payload Download and Extraction"
+
+              # 3. Generate Directories and Dashboards
               mkdir -p $TARGET_DIR/prometheus_data
               mkdir -p $TARGET_DIR/grafana_data
+              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
-              echo "=== Injecting Secure Runtime Variables ==="
+              # 4. Inject Variables Safely
+              ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
               cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
-              AWS_ACCOUNT_ID='${data.aws_caller_identity.current.account_id}'
+              AWS_ACCOUNT_ID='$ACCOUNT_ID'
               ENVEOF
               chmod 600 $TARGET_DIR/.env
+              check_success ".env File Creation for Account $ACCOUNT_ID"
 
-              echo "=== Pulling Large Community Dashboard Archive directly from S3 Object Store ==="
-              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
-
-              echo "=== Aligning Linux Ownership Policies on Host Data Paths ==="
-              chmod 644 $TARGET_DIR/prometheus.yml
-              chmod 644 $TARGET_DIR/default.conf
-
+              # 5. Fix Permissions
+              chmod 644 $TARGET_DIR/prometheus.yml || true
+              chmod 644 $TARGET_DIR/default.conf || true
               chown -R 65534:65534 $TARGET_DIR/prometheus_data
               chown -R 472:472 $TARGET_DIR/grafana_data
               chmod -R 775 $TARGET_DIR/prometheus_data
               chmod -R 775 $TARGET_DIR/grafana_data
-
               chown -R ec2-user:ec2-user $TARGET_DIR
-              
-              echo "=== Orchestrating Self-Healing Application Containers ==="
+
+              # 6. Auth and Run
               cd $TARGET_DIR
-              
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
-
-              echo "=== Authenticating Docker to Amazon ECR ==="
-              aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.us-east-1.amazonaws.com
-
-              echo "=== Waiting for GitHub Actions to push the Backend Image... ==="
-              until docker-compose pull; do
-                echo "Image not found yet. Retrying in 10 seconds..."
-                sleep 10
-              done
-
-              docker-compose up -d
               
-              echo "=== Bootstrap Lifecycle Process Terminated Cleanly ==="
+              aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+              check_success "ECR Authentication"
+              
+              docker-compose pull
+              docker-compose up -d
+              check_success "Container Orchestration"
+              
+              echo "--- Deployment Finished Successfully ---"
               EOF
 
   tags = { Name = "Web-Server-for-${var.user_name}" }
