@@ -16,10 +16,6 @@ services:
   backend:
     image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest
     container_name: terraform-project-backend
-    expose:
-      - "5000"
-    environment:
-      - FLASK_ENV=production
     restart: always
 
   prometheus:
@@ -28,7 +24,6 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - ./prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
