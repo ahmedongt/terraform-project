@@ -51,7 +51,6 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# Dynamically fetches your current AWS Account ID
 data "aws_caller_identity" "current" {}
 
 data "http" "cloudflare_ips" {
@@ -74,7 +73,6 @@ locals {
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
-# Create the Private ECR Registry for your Backend Image
 resource "aws_ecr_repository" "devops_backend" {
   name                 = "devops-backend"
   image_tag_mutability = "MUTABLE"
@@ -170,7 +168,6 @@ resource "aws_iam_role_policy_attachment" "ssm_core_attach" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# Attach Read-Only ECR permissions to the Web Server Role
 resource "aws_iam_role_policy_attachment" "ecr_readonly_attach" {
   role       = aws_iam_role.web_admin_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
@@ -192,7 +189,7 @@ resource "aws_instance" "my_web_server" {
   user_data = <<-EOF
               #!/bin/bash
               exec > >(tee /var/log/user-data.log|logger -t user-data -s /var/log/user-data.log) 2>&1
-               
+              
               echo "=== Ensuring Docker Compose Executable is Linked ==="
               mkdir -p /usr/local/lib/docker/cli-plugins
               curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
@@ -207,10 +204,10 @@ resource "aws_instance" "my_web_server" {
               echo "=== Fetching Application Deployment Archive from S3 ==="
               sleep 5
               aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
-               
+              
               echo "=== Extracting Payload Bundle Configuration Map ==="
               tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
-               
+              
               echo "=== Generating Dedicated Persistent Storage Data Volumes ==="
               mkdir -p $TARGET_DIR/prometheus_data
               mkdir -p $TARGET_DIR/grafana_data
@@ -236,10 +233,10 @@ resource "aws_instance" "my_web_server" {
               chmod -R 775 $TARGET_DIR/grafana_data
 
               chown -R ec2-user:ec2-user $TARGET_DIR
-               
+              
               echo "=== Orchestrating Self-Healing Application Containers ==="
               cd $TARGET_DIR
-               
+              
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
 
@@ -253,7 +250,7 @@ resource "aws_instance" "my_web_server" {
               done
 
               docker-compose up -d
-               
+              
               echo "=== Bootstrap Lifecycle Process Terminated Cleanly ==="
               EOF
 
