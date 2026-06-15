@@ -76,7 +76,7 @@ locals {
 resource "aws_ecr_repository" "devops_backend" {
   name                 = "devops-backend"
   image_tag_mutability = "MUTABLE"
-  force_delete        = true
+  force_delete         = true
 
   image_scanning_configuration {
     scan_on_push = true
@@ -237,14 +237,16 @@ resource "aws_instance" "my_web_server" {
               chmod 600 $TARGET_DIR/.env
               check_success ".env File Creation for Account $ACCOUNT_ID"
 
-              # 5. Fix Permissions
+              # 5. Fix Permissions (Corrected Order execution)
+              chown -R ec2-user:ec2-user $TARGET_DIR
               chmod 644 $TARGET_DIR/prometheus.yml || true
               chmod 644 $TARGET_DIR/default.conf || true
+              
+              # Isolate data paths specifically for the containers to prevent crashes
               chown -R 65534:65534 $TARGET_DIR/prometheus_data
               chown -R 472:472 $TARGET_DIR/grafana_data
               chmod -R 775 $TARGET_DIR/prometheus_data
               chmod -R 775 $TARGET_DIR/grafana_data
-              chown -R ec2-user:ec2-user $TARGET_DIR
 
               # 6. Auth and Run
               cd $TARGET_DIR
