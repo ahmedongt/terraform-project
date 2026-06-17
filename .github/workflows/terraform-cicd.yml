@@ -72,7 +72,7 @@ jobs:
     if: |
       always() && 
       (needs.packer.result == 'success' || needs.packer.result == 'skipped') && 
-      github.event_name == 'push'
+      (github.event_name == 'push' || github.event_name == 'pull_request')
     
     steps:
       - name: Checkout
@@ -115,10 +115,10 @@ jobs:
           aws-region: "us-east-1"
 
       - name: Package and Publish App Configurations to S3
+        if: github.event_name == 'push'
         run: |
           echo "=== Archiving deployment descriptors ==="
-          tar -czf app-payload.tar.gz docker-compose.yml default.conf prometheus.yml website/ grafana/
-          
+          tar -czf app-payload.tar.gz docker-compose.yml default.conf prometheus.yml website/ grafana/          
           echo "=== Shipping secure payload bundle to configuration staging bucket ==="
           aws s3 cp app-payload.tar.gz s3://monitoring-configs-and-stats-kali/deployments/app-payload.tar.gz
 
@@ -154,6 +154,7 @@ jobs:
           terraform plan
 
       - name: Terraform Apply
+        if: github.event_name == 'push'
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
@@ -167,10 +168,12 @@ jobs:
           terraform apply -auto-approve
 
       - name: Log in to Amazon ECR
+        if: github.event_name == 'push'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build, Tag, and Push Backend Image to Amazon ECR
+        if: github.event_name == 'push'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: devops-backend
