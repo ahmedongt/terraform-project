@@ -91,6 +91,7 @@ resource "aws_eip" "web_eip" {
 
 resource "aws_security_group" "web_traffic" {
   name_prefix = "allow_web_api_cloudflare-" 
+  vpc_id      = aws_vpc.custom_vpc.id
   description = "Managed reverse proxy entry points - 80/443 (Cloudflare), 5000 (API)"
 
   ingress {
@@ -178,8 +179,8 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
 resource "aws_instance" "my_web_server" {
   ami                         = data.aws_ami.packer_golden_image.id
   instance_type               = var.instance_type
+  subnet_id                   = aws_subnet.public_1.id
   vpc_security_group_ids      = [aws_security_group.web_traffic.id]
-  iam_instance_profile        = aws_iam_instance_profile.web_instance_profile.name
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
 
