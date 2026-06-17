@@ -183,6 +183,7 @@ resource "aws_instance" "my_web_server" {
   vpc_security_group_ids      = [aws_security_group.web_traffic.id]
   key_name                    = "Keypairforytthumbnail"
   user_data_replace_on_change = true
+  iam_instance_profile        = aws_iam_instance_profile.web_instance_profile.name
 
   user_data = <<-EOF
               #!/bin/bash
