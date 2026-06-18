@@ -33,7 +33,7 @@ resource "aws_security_group" "alb_traffic" {
 }
 
 # ====================================================================
-# DYNAMIC AMI LOOKUP (Fetches your latest Packer build automatically)
+# DYNAMIC AMI LOOKUP (Fetches your latest build automatically)
 # ====================================================================
 data "aws_ami" "packer_app_ami" {
   most_recent = true
@@ -41,7 +41,8 @@ data "aws_ami" "packer_app_ami" {
 
   filter {
     name   = "name"
-    values = ["packer-app-blueprint-*"] 
+    # FIXED: Now matches the exact AMI prefix shown in your AWS console
+    values = ["golden-devops-ami-al2023-*"] 
   }
 }
 
