@@ -14,7 +14,7 @@ services:
       - backend
 
   backend:
-    image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest
+    image: devops-backend:latest
     container_name: terraform-project-backend
     restart: always
 
@@ -37,7 +37,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
     volumes:
       - ./grafana_data:/var/lib/grafana
