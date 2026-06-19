@@ -2,22 +2,22 @@
 # SECURITY GROUP FOR THE APPLICATION LOAD BALANCER
 # ====================================================================
 resource "aws_security_group" "alb_traffic" {
-  name_prefix = "alb-traffic-cloudflare-"
+  name_prefix = "alb-traffic-public-testing-"
   vpc_id      = aws_vpc.custom_vpc.id
-  description = "Allows incoming traffic from Cloudflare to the ALB"
+  description = "TEMPORARY: Allows incoming traffic from anywhere for verification"
 
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4
+    cidr_blocks = ["0.0.0.0/0"] # Temporarily open for testing
   }
 
   ingress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4
+    cidr_blocks = ["0.0.0.0/0"] # Temporarily open for testing
   }
 
   egress {
