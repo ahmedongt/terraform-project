@@ -81,7 +81,6 @@ resource "aws_launch_template" "app_server" {
   instance_type = "t3.micro"
   key_name      = "Keypairforytthumbnail"
 
-  # FIXED: Attaches the required IAM Profile for S3 and ECR authorization
   iam_instance_profile {
     name = aws_iam_instance_profile.web_instance_profile.name
   }
@@ -91,7 +90,6 @@ resource "aws_launch_template" "app_server" {
     security_groups             = [aws_security_group.ec2_traffic.id]
   }
 
-  # FIXED: Converts standard heredoc text to base64 encoding for launch template compliance
   user_data = base64encode(<<-EOF
               #!/bin/bash
               set -e 
@@ -151,7 +149,7 @@ resource "aws_launch_template" "app_server" {
               chmod -R 775 $TARGET_DIR/prometheus_data
               chmod -R 775 $TARGET_DIR/grafana_data
 
-              # 6. Auth and Run
+              # 6. Auth, Private Pull, Tag, and Run
               cd $TARGET_DIR
               docker rm -f $(docker ps -aq) 2>/dev/null || true
               docker network prune -f || true
@@ -159,7 +157,15 @@ resource "aws_launch_template" "app_server" {
               aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
               check_success "ECR Authentication"
               
-              docker-compose pull
+              # Explicitly pull down the private ECR image via its full authenticated path
+              docker pull $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest
+              check_success "ECR Private Image Pull"
+
+              # Tag it locally so Docker Compose can catch it on the machine without going back to Docker Hub
+              docker tag $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest devops-backend:latest
+              check_success "Local Docker Image Tagging"
+
+              # Run the orchestration infrastructure
               docker-compose up -d
               check_success "Container Orchestration"
               
@@ -230,7 +236,7 @@ resource "aws_lb_listener" "http_ingress" {
 }
 
 # ====================================================================
-# AUTO SCALING GROUP (Ties the network, template, and ALB together)
+# AUTO SCALING GROUP
 # ====================================================================
 resource "aws_autoscaling_group" "app_asg" {
   name_prefix         = "app-asg-"
