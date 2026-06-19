@@ -41,7 +41,6 @@ data "aws_ami" "packer_app_ami" {
 
   filter {
     name   = "name"
-    # FIXED: Now matches the exact AMI prefix shown in your AWS console
     values = ["golden-devops-ami-al2023-*"] 
   }
 }
@@ -82,10 +81,91 @@ resource "aws_launch_template" "app_server" {
   instance_type = "t3.micro"
   key_name      = "Keypairforytthumbnail"
 
+  # FIXED: Attaches the required IAM Profile for S3 and ECR authorization
+  iam_instance_profile {
+    name = aws_iam_instance_profile.web_instance_profile.name
+  }
+
   network_interfaces {
     associate_public_ip_address = true
     security_groups             = [aws_security_group.ec2_traffic.id]
   }
+
+  # FIXED: Converts standard heredoc text to base64 encoding for launch template compliance
+  user_data = base64encode(<<-EOF
+              #!/bin/bash
+              set -e 
+              
+              # Log everything to user-data.log
+              exec > >(tee /var/log/user-data.log) 2>&1
+              
+              echo "--- Starting ASG Dynamic Deployment ---"
+              
+              check_success() {
+                  if [ $? -eq 0 ]; then
+                      echo "SUCCESS: $1"
+                  else
+                      echo "ERROR: $1 failed!"
+                      exit 1
+                  fi
+              }
+
+              # 1. Setup Docker Compose
+              mkdir -p /usr/local/lib/docker/cli-plugins
+              curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
+              chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
+              check_success "Docker Compose Installation"
+
+              # 2. Fetch Payload
+              TARGET_DIR="/app/terraform-project"
+              rm -rf $TARGET_DIR
+              mkdir -p $TARGET_DIR
+              sleep 5
+              aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
+              tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
+              check_success "S3 Payload Download and Extraction"
+
+              # 3. Generate Directories and Dashboards
+              mkdir -p $TARGET_DIR/prometheus_data
+              mkdir -p $TARGET_DIR/grafana_data
+              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
+
+              # 4. Inject Variables Safely
+              ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+              cat <<ENVEOF > $TARGET_DIR/.env
+              GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
+              GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
+              AWS_ACCOUNT_ID='$ACCOUNT_ID'
+              ENVEOF
+              chmod 600 $TARGET_DIR/.env
+              check_success ".env File Creation for Account $ACCOUNT_ID"
+
+              # 5. Fix Permissions
+              chown -R ec2-user:ec2-user $TARGET_DIR
+              chmod 644 $TARGET_DIR/prometheus.yml || true
+              chmod 644 $TARGET_DIR/default.conf || true
+              
+              chown -R 65534:65534 $TARGET_DIR/prometheus_data
+              chown -R 472:472 $TARGET_DIR/grafana_data
+              chmod -R 775 $TARGET_DIR/prometheus_data
+              chmod -R 775 $TARGET_DIR/grafana_data
+
+              # 6. Auth and Run
+              cd $TARGET_DIR
+              docker rm -f $(docker ps -aq) 2>/dev/null || true
+              docker network prune -f || true
+              
+              aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+              check_success "ECR Authentication"
+              
+              docker-compose pull
+              docker-compose up -d
+              check_success "Container Orchestration"
+              
+              echo "--- ASG Managed Deployment Finished Successfully ---"
+              EOF
+  )
 
   tag_specifications {
     resource_type = "instance"
@@ -158,10 +238,7 @@ resource "aws_autoscaling_group" "app_asg" {
   max_size            = 4
   min_size            = 1
   
-  # Tells the ASG to scale across BOTH public subnets for high availability
   vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
-  
-  # Hooks up the application pool to our load balancer target group
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
 
   launch_template {
@@ -169,7 +246,6 @@ resource "aws_autoscaling_group" "app_asg" {
     version = "$Latest"
   }
 
-  # Uses the ALB's active health checks rather than basic EC2 ping statuses
   health_check_type         = "ELB"
   health_check_grace_period = 300
 
