@@ -142,7 +142,7 @@ resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
   content = aws_lb.app_alb.dns_name
-  type    = "CNAME" # Cloudflare handles CNAME Flattening on apex securely
+  type    = "CNAME"
   proxied = true
 }
 

@@ -13,7 +13,6 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["https://ytthumbnail.site", "http://localhost"]}}) 
 
 # --- AWS S3 CENTRALIZED STORAGE SETUP ---
-# Grabs the bucket name injected via environment variables dynamically
 S3_BUCKET = os.getenv("AWS_S3_BUCKET", "kali-web-lab-ahmed-12345")
 s3_client = boto3.client('s3', region_name='us-east-1')
 
@@ -70,10 +69,11 @@ def get_thumbnail():
         except Exception: 
             return jsonify({"error": "External API error"}), 500
 
+    # CRITICAL NGINX ALIGNMENT FIX: Prepend /api/ so Nginx proxy routes them back to the API
     return jsonify({
         "filename": filename,
-        "view_url": f"/view/{filename}",
-        "delete_url": f"/delete/{filename}"
+        "view_url": f"/api/view/{filename}",
+        "delete_url": f"/api/delete/{filename}"
     }), 200
 
 # --- 3. VIEW ROUTE (STATELESS PROXY STREAMING) ---

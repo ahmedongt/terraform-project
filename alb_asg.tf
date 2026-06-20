@@ -10,14 +10,14 @@ resource "aws_security_group" "alb_traffic" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Temporarily open for testing
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Temporarily open for testing
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -158,15 +158,12 @@ resource "aws_launch_template" "app_server" {
               aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
               check_success "ECR Authentication"
               
-              # Explicitly pull down the private ECR image via its full authenticated path
               docker pull $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest
               check_success "ECR Private Image Pull"
 
-              # Tag it locally so Docker Compose can catch it on the machine without going back to Docker Hub
               docker tag $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/devops-backend:latest devops-backend:latest
               check_success "Local Docker Image Tagging"
 
-              # Run the orchestration infrastructure
               docker-compose up -d
               check_success "Container Orchestration"
               
