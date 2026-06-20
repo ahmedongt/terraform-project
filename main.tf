@@ -24,7 +24,7 @@ terraform {
     key          = "state/terraform.tfstate"
     region       = "us-east-1"
     encrypt      = true
-    use_lockfile = true 
+    use_lockfile = true
   }
 
   required_providers {
@@ -80,58 +80,17 @@ data "aws_ecr_repository" "devops_backend" {
   name = "devops-backend"
 }
 
-resource "aws_eip" "web_eip" {
-  instance = aws_instance.my_web_server.id
-  domain   = "vpc"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_security_group" "web_traffic" {
-  name_prefix = "allow_web_api_cloudflare-" 
-  vpc_id      = aws_vpc.custom_vpc.id
-  description = "Managed reverse proxy entry points - 80/443 (Cloudflare), 5000 (API)"
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4
-  }
-
-  ingress {
-    from_port   = 5000
-    to_port     = 5000
-    protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
+# ====================================================================
+# CENTRALIZED STORAGE BUCKET
+# ====================================================================
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
+# ====================================================================
+# IAM PERMISSIONS TIER FOR AUTO SCALING INSTANCES
+# ====================================================================
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -148,10 +107,10 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action   = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
-        Effect   = "Allow"
+        Action = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
+        Effect = "Allow"
         Resource = [
-          "${aws_s3_bucket.website_bucket.arn}", 
+          "${aws_s3_bucket.website_bucket.arn}",
           "${aws_s3_bucket.website_bucket.arn}/*",
           "arn:aws:s3:::${local.monitoring_bucket}",
           "arn:aws:s3:::${local.monitoring_bucket}/*"
@@ -176,115 +135,28 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
   role = aws_iam_role.web_admin_role.name
 }
 
-resource "aws_instance" "my_web_server" {
-  ami                         = data.aws_ami.packer_golden_image.id
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.public_1.id
-  vpc_security_group_ids      = [aws_security_group.web_traffic.id]
-  key_name                    = "Keypairforytthumbnail"
-  user_data_replace_on_change = true
-  iam_instance_profile        = aws_iam_instance_profile.web_instance_profile.name
-
-  user_data = <<-EOF
-              #!/bin/bash
-              # Fail-fast: exit script on any command failure
-              set -e 
-              
-              # Log everything to user-data.log
-              exec > >(tee /var/log/user-data.log) 2>&1
-              
-              echo "--- Starting Deployment ---"
-              
-              # Function to check command success
-              check_success() {
-                  if [ $? -eq 0 ]; then
-                      echo "SUCCESS: $1"
-                  else
-                      echo "ERROR: $1 failed!"
-                      exit 1
-                  fi
-              }
-
-              # 1. Setup Docker Compose
-              mkdir -p /usr/local/lib/docker/cli-plugins
-              curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose
-              chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-              ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
-              check_success "Docker Compose Installation"
-
-              # 2. Fetch Payload
-              TARGET_DIR="/app/terraform-project"
-              rm -rf $TARGET_DIR
-              mkdir -p $TARGET_DIR
-              sleep 5
-              aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
-              tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
-              check_success "S3 Payload Download and Extraction"
-
-              # 3. Generate Directories and Dashboards
-              mkdir -p $TARGET_DIR/prometheus_data
-              mkdir -p $TARGET_DIR/grafana_data
-              aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
-
-              # 4. Inject Variables Safely
-              ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-              cat <<ENVEOF > $TARGET_DIR/.env
-              GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
-              GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
-              AWS_ACCOUNT_ID='$ACCOUNT_ID'
-              ENVEOF
-              chmod 600 $TARGET_DIR/.env
-              check_success ".env File Creation for Account $ACCOUNT_ID"
-
-              # 5. Fix Permissions (Corrected Order execution)
-              chown -R ec2-user:ec2-user $TARGET_DIR
-              chmod 644 $TARGET_DIR/prometheus.yml || true
-              chmod 644 $TARGET_DIR/default.conf || true
-              
-              # Isolate data paths specifically for the containers to prevent crashes
-              chown -R 65534:65534 $TARGET_DIR/prometheus_data
-              chown -R 472:472 $TARGET_DIR/grafana_data
-              chmod -R 775 $TARGET_DIR/prometheus_data
-              chmod -R 775 $TARGET_DIR/grafana_data
-
-              # 6. Auth and Run
-              cd $TARGET_DIR
-              docker rm -f $(docker ps -aq) 2>/dev/null || true
-              docker network prune -f || true
-              
-              aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
-              check_success "ECR Authentication"
-              
-              docker-compose pull
-              docker-compose up -d
-              check_success "Container Orchestration"
-              
-              echo "--- Deployment Finished Successfully ---"
-              EOF
-
-  tags = { Name = "Web-Server-for-${var.user_name}" }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
+# ====================================================================
+# CLOUDFLARE DNS ROUTING TRAFFIC EDGE TO APPLICATION LOAD BALANCER
+# ====================================================================
 resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "@"
-  content = aws_eip.web_eip.public_ip
-  type    = "A"
+  content = aws_lb.app_alb.dns_name
+  type    = "CNAME" # Cloudflare handles CNAME Flattening on apex securely
   proxied = true
 }
 
 resource "cloudflare_record" "www_dns" {
   zone_id = var.cloudflare_zone_id
   name    = "www"
-  content = var.domain_name 
-  type    = "CNAME"         
+  content = var.domain_name
+  type    = "CNAME"
   proxied = true
 }
 
+# ====================================================================
+# INFRASTRUCTURE OUTPUTS
+# ====================================================================
 output "monitoring_bucket_name" {
   value = local.monitoring_bucket
 }
@@ -293,11 +165,7 @@ output "website_url" {
   value = "https://${var.domain_name}"
 }
 
-output "server_ip" {
-  value = aws_eip.web_eip.public_ip
-}
-
-output "ec2_instance_id" {
-  value       = aws_instance.my_web_server.id
-  description = "Target reference for secure AWS Session Manager sessions"
+output "load_balancer_dns_name" {
+  value       = aws_lb.app_alb.dns_name
+  description = "Public entrypoint managed by the Application Load Balancer"
 }

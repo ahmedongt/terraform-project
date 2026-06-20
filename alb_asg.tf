@@ -41,7 +41,7 @@ data "aws_ami" "packer_app_ami" {
 
   filter {
     name   = "name"
-    values = ["golden-devops-ami-al2023-*"] 
+    values = ["golden-devops-ami-al2023-*"]
   }
 }
 
@@ -129,12 +129,13 @@ resource "aws_launch_template" "app_server" {
               mkdir -p $TARGET_DIR/grafana_data
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
-              # 4. Inject Variables Safely
+              # 4. Inject Variables Safely (CRITICAL FIX: Passed Central S3 Storage Variable)
               ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
               cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
               GF_SECURITY_ADMIN_PASSWORD='${var.grafana_admin_password}'
               AWS_ACCOUNT_ID='$ACCOUNT_ID'
+              AWS_S3_BUCKET='kali-web-lab-${local.safe_user_name}-12345'
               ENVEOF
               chmod 600 $TARGET_DIR/.env
               check_success ".env File Creation for Account $ACCOUNT_ID"
@@ -227,7 +228,6 @@ resource "aws_lb_target_group" "app_tg" {
 resource "aws_lb_listener" "http_ingress" {
   load_balancer_arn = aws_lb.app_alb.arn
   port              = "80"
-  protocol          = "HTTP"
 
   default_action {
     type             = "forward"
@@ -239,11 +239,11 @@ resource "aws_lb_listener" "http_ingress" {
 # AUTO SCALING GROUP
 # ====================================================================
 resource "aws_autoscaling_group" "app_asg" {
-  name_prefix         = "app-asg-"
-  desired_capacity    = 2
-  max_size            = 4
-  min_size            = 1
-  
+  name_prefix      = "app-asg-"
+  desired_capacity = 2
+  max_size         = 4
+  min_size         = 1
+
   vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
 
