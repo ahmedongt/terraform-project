@@ -81,7 +81,7 @@ data "aws_ecr_repository" "devops_backend" {
 }
 
 # ====================================================================
-# CENTRALIZED STORAGE BUCKET
+# CENTRALIZED STORAGE BUCKET (S3 for Stateless Thumbnails)
 # ====================================================================
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
@@ -102,7 +102,6 @@ resource "aws_iam_role" "web_admin_role" {
 resource "aws_iam_role_policy" "s3_and_ssm_access" {
   name = "s3_and_ssm_access"
   role = aws_iam_role.web_admin_role.id
-
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -136,7 +135,7 @@ resource "aws_iam_instance_profile" "web_instance_profile" {
 }
 
 # ====================================================================
-# CLOUDFLARE DNS ROUTING TRAFFIC EDGE TO APPLICATION LOAD BALANCER
+# CLOUDFLARE DNS ROUTING TO ALB
 # ====================================================================
 resource "cloudflare_record" "site_dns" {
   zone_id = var.cloudflare_zone_id
@@ -155,17 +154,12 @@ resource "cloudflare_record" "www_dns" {
 }
 
 # ====================================================================
-# INFRASTRUCTURE OUTPUTS
+# OUTPUTS
 # ====================================================================
-output "monitoring_bucket_name" {
-  value = local.monitoring_bucket
-}
-
 output "website_url" {
   value = "https://${var.domain_name}"
 }
 
 output "load_balancer_dns_name" {
-  value       = aws_lb.app_alb.dns_name
-  description = "Public entrypoint managed by the Application Load Balancer"
+  value = aws_lb.app_alb.dns_name
 }

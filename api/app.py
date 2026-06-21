@@ -24,6 +24,13 @@ def get_video_id(url):
     if not match: return None 
     return match.group(1)
 
+# --- 1. HEALTH CHECK ROUTES (CRITICAL FOR ALB) ---
+@app.route('/', methods=['GET'])
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Returns 200 OK to the AWS Application Load Balancer to prevent termination loops."""
+    return jsonify({"status": "healthy", "message": "Backend is running"}), 200
+
 # --- 2. MAIN FETCH ROUTE ---
 @app.route('/get-thumb', methods=['GET'])
 def get_thumbnail():
