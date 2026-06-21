@@ -16,6 +16,8 @@ services:
   backend:
     image: devops-backend:latest
     container_name: terraform-project-backend
+    ports:
+      - "5000:5000" # Added this line
     restart: always
     env_file:
       - .env
