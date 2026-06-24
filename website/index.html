@@ -4,18 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YT Thumbnail Downloader</title>
-
     <script src="https://cdn.tailwindcss.com/3.4.1"></script>
-
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" 
-          integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" 
-          crossorigin="anonymous" referrerpolicy="no-referrer" />
-
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <style>
-        @keyframes fade-in {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
     </style>
 </head>
@@ -23,126 +15,61 @@
     <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md text-center border border-gray-700">
         <h1 class="text-3xl font-extrabold mb-2 text-red-500 tracking-tight">YT Thumbnail Downloader</h1>
         <p class="text-gray-400 text-sm mb-8 flex items-center justify-center gap-2">
-            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            Fast and Private Server. 
+            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Fast and Private Server. 
         </p>
-
         <div class="space-y-4">
-            <input type="text" id="videoUrl" placeholder="Paste YouTube Link here..."
-                class="w-full p-4 rounded-xl bg-gray-900 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-white transition-all shadow-inner">
-
-            <button onclick="downloadThumbnail()" id="btn"
-                class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl transition duration-300 transform active:scale-95 shadow-lg flex items-center justify-center gap-2">
+            <input type="text" id="videoUrl" placeholder="Paste YouTube Link here..." class="w-full p-4 rounded-xl bg-gray-900 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-white transition-all shadow-inner">
+            <button onclick="downloadThumbnail()" id="btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl transition duration-300 transform active:scale-95 shadow-lg flex items-center justify-center gap-2">
                 <i class="fas fa-magic"></i> Get Thumbnail
             </button>
         </div>
-
         <p id="status" class="mt-4 text-sm font-medium text-gray-400 min-h-[1.25rem]"></p>
-
         <div id="resultArea" class="mt-8 hidden border-t border-gray-700 pt-6 animate-fade-in">
-            <div class="relative group">
-                <img id="thumbPreview" alt="YouTube Thumbnail Preview" class="w-full rounded-xl shadow-md mb-6 border border-gray-600 transition-transform group-hover:scale-[1.02]">
-            </div>
-
+            <img id="thumbPreview" class="w-full rounded-xl shadow-md mb-6 border border-gray-600">
             <div class="grid grid-cols-1 gap-3">
-                <a id="viewBtn" target="_blank"
-                   class="bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2">
-                   <i class="fas fa-eye"></i> View Full Size
-                </a>
-
-                <button id="downloadBtn"
-                    class="bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2">
-                    <i class="fas fa-download"></i> Save to Device
-                </button>
-
-                <button id="deleteBtn"
-                    class="mt-4 text-gray-500 hover:text-red-400 text-xs transition flex items-center justify-center gap-2">
-                    <i class="fas fa-trash-alt"></i> Wipe from AWS Server
-                </button>
+                <a id="viewBtn" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2"><i class="fas fa-eye"></i> View Full Size</a>
+                <button id="downloadBtn" class="bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2"><i class="fas fa-download"></i> Save to Device</button>
+                <button id="deleteBtn" class="mt-4 text-gray-500 hover:text-red-400 text-xs transition flex items-center justify-center gap-2"><i class="fas fa-trash-alt"></i> Wipe from AWS Server</button>
             </div>
         </div>
     </div>
-
     <script>
-        const API_BASE = "/api"; 
-        // UPDATE THESE TWO VALUES BELOW:
-        const S3_BASE_URL = "https://kali-web-lab-kali-12345.s3.us-east-1.amazonaws.com/"; 
+        const API_BASE = "/api";
+        const S3_BASE_URL = "https://kali-web-lab-kali-12345.s3.us-east-1.amazonaws.com/";
 
         async function downloadThumbnail() {
             const urlInput = document.getElementById('videoUrl').value;
             const status = document.getElementById('status');
             const btn = document.getElementById('btn');
-            const resultArea = document.getElementById('resultArea');
-
-            if (!urlInput) {
-                status.innerHTML = "<span class='text-yellow-500'>⚠️ Please paste a URL first!</span>";
-                return;
-            }
-
-            status.innerHTML = "<i class='fas fa-spinner fa-spin mr-2'></i> Processing on AWS...";
+            if (!urlInput) { status.innerText = "Please paste a URL!"; return; }
+            status.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Processing...";
             btn.disabled = true;
-            resultArea.classList.add('hidden');
-
             try {
                 const response = await fetch(`${API_BASE}/get-thumb?url=${encodeURIComponent(urlInput)}`);
-                
-                if (!response.ok) {
-                    throw new Error(`Server Error: ${response.status}`);
-                }
-
                 const data = await response.json();
-                if (data.filename) {
-                    setupUI(data);
-                    status.innerHTML = "<span class='text-green-400'>✨ Thumbnail Ready!</span>";
-                } else {
-                    throw new Error(data.error || "Unknown Error");
-                }
-
-            } catch (error) {
-                status.innerHTML = `<span class='text-red-500'>❌ ${error.message}</span>`;
-            } finally {
-                btn.disabled = false;
-            }
+                if (data.filename) { setupUI(data); status.innerText = "✨ Ready!"; }
+                else throw new Error(data.error);
+            } catch (e) { status.innerText = "Error: " + e.message; }
+            finally { btn.disabled = false; }
         }
 
         function setupUI(data) {
-            const resultArea = document.getElementById('resultArea');
-            const thumbPreview = document.getElementById('thumbPreview');
-            const viewBtn = document.getElementById('viewBtn');
-            const downloadBtn = document.getElementById('downloadBtn');
-            const deleteBtn = document.getElementById('deleteBtn');
-
-            // Corrected logic: point to S3, not the local server
-            const fullImageUrl = S3_BASE_URL + data.filename;
-
-            resultArea.classList.remove('hidden');
-            thumbPreview.src = fullImageUrl;
-            viewBtn.href = fullImageUrl;
-
-            downloadBtn.onclick = async () => {
-                try {
-                    const image = await fetch(fullImageUrl);
-                    const imageBlob = await image.blob();
-                    const imageURL = URL.createObjectURL(imageBlob);
-                    const link = document.createElement('a');
-                    link.href = imageURL;
-                    link.download = data.filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    URL.revokeObjectURL(imageURL);
-                } catch (err) {
-                    console.error("Download failed", err);
-                }
+            document.getElementById('resultArea').classList.remove('hidden');
+            const fullUrl = S3_BASE_URL + data.filename;
+            document.getElementById('thumbPreview').src = fullUrl;
+            document.getElementById('viewBtn').href = fullUrl;
+            document.getElementById('downloadBtn').onclick = async () => {
+                const res = await fetch(fullUrl);
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = data.filename;
+                a.click();
             };
-
-            deleteBtn.onclick = async () => {
-                const delRes = await fetch(`${API_BASE}${data.delete_url}`);
-                if (delRes.ok) {
-                    resultArea.classList.add('hidden');
-                    document.getElementById('status').innerHTML = "<span class='text-green-400'>✨ Server cleaned!</span>";
-                    document.getElementById('videoUrl').value = "";
-                }
+            document.getElementById('deleteBtn').onclick = async () => {
+                await fetch(`${API_BASE}/delete?file=${data.filename}`);
+                document.getElementById('resultArea').classList.add('hidden');
+                document.getElementById('status').innerText = "Deleted!";
             };
         }
     </script>
