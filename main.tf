@@ -7,8 +7,16 @@ variable "cloudflare_zone_id" {}
 variable "user_name" {}
 variable "domain_name" {}
 variable "instance_type" {}
-variable "grafana_admin_user" { type = string; sensitive = true }
-variable "grafana_admin_password" { type = string; sensitive = true }
+
+variable "grafana_admin_user" {
+  type      = string
+  sensitive = true
+}
+
+variable "grafana_admin_password" {
+  type      = string
+  sensitive = true
+}
 
 terraform {
   backend "s3" {
@@ -33,13 +41,11 @@ locals {
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
-# 1. Bucket Declaration (Needed by IAM policy)
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
-# 2. IAM Role Declaration (Needed by Instance Profile and Policy)
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
@@ -48,7 +54,6 @@ resource "aws_iam_role" "web_admin_role" {
   })
 }
 
-# 3. IAM Policy Declaration
 resource "aws_iam_role_policy" "s3_and_ssm_access" {
   name = "s3_and_ssm_access"
   role = aws_iam_role.web_admin_role.id
@@ -56,8 +61,8 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
-        Effect = "Allow"
+        Action   = ["s3:GetObject", "s3:ListBucket", "s3:PutObject", "s3:DeleteObject"]
+        Effect   = "Allow"
         Resource = [
           "${aws_s3_bucket.website_bucket.arn}",
           "${aws_s3_bucket.website_bucket.arn}/*",
@@ -74,18 +79,36 @@ resource "aws_iam_role_policy" "s3_and_ssm_access" {
   })
 }
 
-# 4. Attachments and Profile
-resource "aws_iam_role_policy_attachment" "ssm_core_attach" { role = aws_iam_role.web_admin_role.name; policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" }
-resource "aws_iam_role_policy_attachment" "ecr_readonly_attach" { role = aws_iam_role.web_admin_role.name; policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" }
+resource "aws_iam_role_policy_attachment" "ssm_core_attach" { 
+  role       = aws_iam_role.web_admin_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" 
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_readonly_attach" { 
+  role       = aws_iam_role.web_admin_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" 
+}
 
 resource "aws_iam_instance_profile" "web_instance_profile" {
   name = "web_instance_profile_${local.safe_user_name}"
   role = aws_iam_role.web_admin_role.name
 }
 
-# [Keep your Cloudflare and Output sections here]
-resource "cloudflare_record" "site_dns" { zone_id = var.cloudflare_zone_id; name = "@"; content = aws_lb.app_alb.dns_name; type = "CNAME"; proxied = true }
-resource "cloudflare_record" "www_dns" { zone_id = var.cloudflare_zone_id; name = "www"; content = var.domain_name; type = "CNAME"; proxied = true }
+resource "cloudflare_record" "site_dns" { 
+  zone_id = var.cloudflare_zone_id
+  name    = "@"
+  content = aws_lb.app_alb.dns_name
+  type    = "CNAME"
+  proxied = true 
+}
+
+resource "cloudflare_record" "www_dns" { 
+  zone_id = var.cloudflare_zone_id
+  name    = "www"
+  content = var.domain_name
+  type    = "CNAME"
+  proxied = true 
+}
 
 output "website_url" { value = "https://${var.domain_name}" }
 output "load_balancer_dns_name" { value = aws_lb.app_alb.dns_name }
