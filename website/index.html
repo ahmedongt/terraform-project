@@ -2,75 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YT Thumbnail Downloader</title>
     <script src="https://cdn.tailwindcss.com/3.4.1"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-    <style>
-        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
-    </style>
 </head>
-<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4 font-sans">
-    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md text-center border border-gray-700">
-        <h1 class="text-3xl font-extrabold mb-2 text-red-500 tracking-tight">YT Thumbnail Downloader</h1>
-        <p class="text-gray-400 text-sm mb-8 flex items-center justify-center gap-2">
-            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Fast and Private Server. 
-        </p>
-        <div class="space-y-4">
-            <input type="text" id="videoUrl" placeholder="Paste YouTube Link here..." class="w-full p-4 rounded-xl bg-gray-900 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-white transition-all shadow-inner">
-            <button onclick="downloadThumbnail()" id="btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl transition duration-300 transform active:scale-95 shadow-lg flex items-center justify-center gap-2">
-                <i class="fas fa-magic"></i> Get Thumbnail
-            </button>
-        </div>
-        <p id="status" class="mt-4 text-sm font-medium text-gray-400 min-h-[1.25rem]"></p>
-        <div id="resultArea" class="mt-8 hidden border-t border-gray-700 pt-6 animate-fade-in">
-            <img id="thumbPreview" class="w-full rounded-xl shadow-md mb-6 border border-gray-600">
-            <div class="grid grid-cols-1 gap-3">
-                <a id="viewBtn" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2"><i class="fas fa-eye"></i> View Full Size</a>
-                <button id="downloadBtn" class="bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2"><i class="fas fa-download"></i> Save to Device</button>
-                <button id="deleteBtn" class="mt-4 text-gray-500 hover:text-red-400 text-xs transition flex items-center justify-center gap-2"><i class="fas fa-trash-alt"></i> Wipe from AWS Server</button>
-            </div>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+    <div class="bg-gray-800 p-8 rounded-2xl w-full max-w-md text-center border border-gray-700">
+        <h1 class="text-3xl font-bold text-red-500 mb-6">YT Thumbnail Downloader</h1>
+        <input type="text" id="videoUrl" placeholder="Paste YouTube Link..." class="w-full p-4 rounded-xl bg-gray-900 border border-gray-700 mb-4">
+        <button onclick="downloadThumbnail()" id="btn" class="w-full bg-red-600 py-4 rounded-xl font-bold">Get Thumbnail</button>
+        <p id="status" class="mt-4 text-gray-400"></p>
+        <div id="resultArea" class="mt-8 hidden">
+            <img id="thumbPreview" class="w-full rounded-xl mb-6">
+            <button id="downloadBtn" class="w-full bg-green-600 py-3 rounded-lg font-semibold mb-2">Save to Device</button>
+            <button id="deleteBtn" class="w-full text-gray-500 hover:text-red-400 text-sm">Wipe from AWS Server</button>
         </div>
     </div>
     <script>
-        const API_BASE = "/api";
         const S3_BASE_URL = "https://kali-web-lab-kali-12345.s3.us-east-1.amazonaws.com/";
-
         async function downloadThumbnail() {
-            const urlInput = document.getElementById('videoUrl').value;
-            const status = document.getElementById('status');
-            const btn = document.getElementById('btn');
-            if (!urlInput) { status.innerText = "Please paste a URL!"; return; }
-            status.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Processing...";
-            btn.disabled = true;
-            try {
-                const response = await fetch(`${API_BASE}/get-thumb?url=${encodeURIComponent(urlInput)}`);
-                const data = await response.json();
-                if (data.filename) { setupUI(data); status.innerText = "✨ Ready!"; }
-                else throw new Error(data.error);
-            } catch (e) { status.innerText = "Error: " + e.message; }
-            finally { btn.disabled = false; }
-        }
-
-        function setupUI(data) {
-            document.getElementById('resultArea').classList.remove('hidden');
-            const fullUrl = S3_BASE_URL + data.filename;
-            document.getElementById('thumbPreview').src = fullUrl;
-            document.getElementById('viewBtn').href = fullUrl;
-            document.getElementById('downloadBtn').onclick = async () => {
-                const res = await fetch(fullUrl);
-                const blob = await res.blob();
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = data.filename;
-                a.click();
-            };
-            document.getElementById('deleteBtn').onclick = async () => {
-                await fetch(`${API_BASE}/delete?file=${data.filename}`);
-                document.getElementById('resultArea').classList.add('hidden');
-                document.getElementById('status').innerText = "Deleted!";
-            };
+            const url = document.getElementById('videoUrl').value;
+            const res = await fetch(`/api/get-thumb?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            if (data.filename) {
+                document.getElementById('resultArea').classList.remove('hidden');
+                const fullUrl = S3_BASE_URL + data.filename;
+                document.getElementById('thumbPreview').src = fullUrl;
+                document.getElementById('downloadBtn').onclick = () => window.open(fullUrl);
+                document.getElementById('deleteBtn').onclick = async () => {
+                    await fetch(`/api/delete?file=${data.filename}`);
+                    document.getElementById('resultArea').classList.add('hidden');
+                    document.getElementById('status').innerText = "Deleted!";
+                };
+            }
         }
     </script>
 </body>
