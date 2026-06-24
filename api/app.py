@@ -31,7 +31,7 @@ def get_thumbnail():
     if not video_id: return jsonify({"error": "Invalid URL"}), 400 
 
     filename = f"thumb_{secure_filename(video_id)}.jpg"
-    account_id = get_aws_account_id()
+    account_id = get_aws_account_id() # Define account_id here
 
     try:
         s3_client.head_object(Bucket=S3_BUCKET, Key=filename, ExpectedBucketOwner=account_id)
@@ -46,11 +46,18 @@ def get_thumbnail():
             Bucket=S3_BUCKET, Key=filename, Body=response.content, 
             ContentType='image/jpeg', ExpectedBucketOwner=account_id
         )
-    return jsonify({"filename": filename}), 200
+
+    # Generate Presigned URL for browser access
+    url = s3_client.generate_presigned_url(
+        'get_object',
+        Params={'Bucket': S3_BUCKET, 'Key': filename},
+        ExpiresIn=3600
+    )
+    return jsonify({"url": url}), 200
 
 @app.route('/delete', methods=['GET'])
 def delete_file():
-    filename = request.args.get('file') # FIX: added variable
+    filename = request.args.get('file')
     if not filename: return jsonify({"error": "No file"}), 400
     try:
         s3_client.delete_object(
