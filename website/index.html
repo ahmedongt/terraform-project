@@ -18,21 +18,31 @@
         </div>
     </div>
     <script>
-        const S3_BASE_URL = "https://kali-web-lab-kali-12345.s3.us-east-1.amazonaws.com/";
         async function downloadThumbnail() {
             const url = document.getElementById('videoUrl').value;
+            document.getElementById('status').innerText = "Processing...";
             const res = await fetch(`/api/get-thumb?url=${encodeURIComponent(url)}`);
             const data = await res.json();
-            if (data.filename) {
+            
+            if (data.url) {
                 document.getElementById('resultArea').classList.remove('hidden');
-                const fullUrl = S3_BASE_URL + data.filename;
-                document.getElementById('thumbPreview').src = fullUrl;
-                document.getElementById('downloadBtn').onclick = () => window.open(fullUrl);
+                document.getElementById('status').innerText = "Thumbnail Ready!";
+                
+                // Use the secure signed URL directly
+                document.getElementById('thumbPreview').src = data.url;
+                document.getElementById('downloadBtn').onclick = () => window.open(data.url);
+                
+                // Extract filename from the URL query params for the delete call
+                const urlObj = new URL(data.url);
+                const filename = urlObj.pathname.split('/').pop();
+
                 document.getElementById('deleteBtn').onclick = async () => {
-                    await fetch(`/api/delete?file=${data.filename}`);
+                    await fetch(`/api/delete?file=${filename}`);
                     document.getElementById('resultArea').classList.add('hidden');
-                    document.getElementById('status').innerText = "Deleted!";
+                    document.getElementById('status').innerText = "Deleted from AWS!";
                 };
+            } else {
+                document.getElementById('status').innerText = "Error: " + (data.error || "Failed");
             }
         }
     </script>
