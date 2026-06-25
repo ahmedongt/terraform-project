@@ -13,13 +13,20 @@
         <p id="status" class="mt-4 text-gray-400"></p>
         <div id="resultArea" class="mt-8 hidden">
             <img id="thumbPreview" class="w-full rounded-xl mb-6">
-            <button id="downloadBtn" class="w-full bg-green-600 py-3 rounded-lg font-semibold mb-2">Save to Device</button>
+            <button id="viewFullBtn" class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-semibold mb-2 transition">View Full Size</button>
+            <button id="downloadBtn" class="w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold mb-4 transition">Save to Device</button>
             <button id="deleteBtn" class="w-full text-gray-500 hover:text-red-400 text-sm">Wipe from AWS Server</button>
         </div>
     </div>
     <script>
         async function downloadThumbnail() {
-            const url = document.getElementById('videoUrl').value;
+            const urlInput = document.getElementById('videoUrl');
+            const url = urlInput.value;
+            if (!url) {
+                document.getElementById('status').innerText = "Please paste a link first!";
+                return;
+            }
+            
             document.getElementById('status').innerText = "Processing...";
             const res = await fetch(`/api/get-thumb?url=${encodeURIComponent(url)}`);
             const data = await res.json();
@@ -28,18 +35,43 @@
                 document.getElementById('resultArea').classList.remove('hidden');
                 document.getElementById('status').innerText = "Thumbnail Ready!";
                 
-                // Use the secure signed URL directly
+                // Set the preview image src
                 document.getElementById('thumbPreview').src = data.url;
-                document.getElementById('downloadBtn').onclick = () => window.open(data.url);
                 
-                // Extract filename from the URL query params for the delete call
+                // Parse filename out of the secure URL
                 const urlObj = new URL(data.url);
                 const filename = urlObj.pathname.split('/').pop();
-
+                
+                // 1. View Full Size Button: Opens the image link cleanly in a new tab
+                document.getElementById('viewFullBtn').onclick = () => {
+                    window.open(data.url, '_blank');
+                };
+                
+                // 2. Save to Device Button: Fetches file as a blob to trigger a true local download
+                document.getElementById('downloadBtn').onclick = async () => {
+                    try {
+                        const response = await fetch(data.url);
+                        const blob = await response.blob();
+                        const blobUrl = window.URL.createObjectURL(blob);
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = blobUrl;
+                        downloadLink.download = filename || 'thumbnail.jpg';
+                        document.body.appendChild(downloadLink);
+                        downloadLink.click();
+                        document.body.removeChild(downloadLink);
+                        window.URL.revokeObjectURL(blobUrl);
+                    } catch (err) {
+                        // Fallback option if local download fails
+                        window.open(data.url, '_blank');
+                    }
+                };
+                
+                // 3. Wipe from AWS Server Button: Wipes file from S3 and resets input box
                 document.getElementById('deleteBtn').onclick = async () => {
                     await fetch(`/api/delete?file=${filename}`);
                     document.getElementById('resultArea').classList.add('hidden');
                     document.getElementById('status').innerText = "Deleted from AWS!";
+                    urlInput.value = ''; // Auto-clears the link field
                 };
             } else {
                 document.getElementById('status').innerText = "Error: " + (data.error || "Failed");
