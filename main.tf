@@ -41,17 +41,59 @@ locals {
   monitoring_bucket = "monitoring-configs-and-stats-kali"
 }
 
+# --------------------------------------------------------------------
+# S3 STORAGE INFRASTRUCTURE TIER
+# --------------------------------------------------------------------
 resource "aws_s3_bucket" "website_bucket" {
   bucket        = "kali-web-lab-${local.safe_user_name}-12345"
   force_destroy = true
 }
 
+# 1. Block Public Access (Ensures top-tier security compliance)
+resource "aws_s3_bucket_public_access_block" "website_bucket_public_block" {
+  bucket = aws_s3_bucket.website_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# 2. Automated CORS Configuration (No more manual console edits!)
+resource "aws_s3_bucket_cors_configuration" "website_bucket_cors" {
+  bucket = aws_s3_bucket.website_bucket.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "PUT", "POST", "DELETE", "HEAD"]
+    allowed_origins = ["https://ytthumbnail.site"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+
+# 3. Lifecycle Policy (Deletes old thumbnails automatically after 1 day)
+resource "aws_s3_bucket_lifecycle_configuration" "website_bucket_lifecycle" {
+  bucket = aws_s3_bucket.website_bucket.id
+
+  rule {
+    id     = "auto-expire-temporary-thumbnails"
+    status = "Enabled"
+
+    expiration {
+      days = 1
+    }
+  }
+}
+
+# --------------------------------------------------------------------
+# IAM & DEPLOYMENT MANAGEMENT TIERS
+# --------------------------------------------------------------------
 resource "aws_iam_role" "web_admin_role" {
   name = "web_admin_role_${local.safe_user_name}"
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" } }]
-  })
+    Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" } }]  })
 }
 
 resource "aws_iam_role_policy" "s3_and_ssm_access" {
