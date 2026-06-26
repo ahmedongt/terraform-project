@@ -86,6 +86,7 @@ resource "aws_launch_template" "app_server" {
   }
 
   network_interfaces {
+    # FIXED: Enabled public IP mapping so user-data can reach ECR and S3 via Internet Gateway
     associate_public_ip_address = true
     security_groups             = [aws_security_group.ec2_traffic.id]
   }
@@ -115,12 +116,17 @@ resource "aws_launch_template" "app_server" {
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               check_success "Docker Compose Installation"
 
-              # 2. Fetch Payload
+              # 2. Fetch Payload with Resilient Dynamic Polling Loop
               TARGET_DIR="/app/terraform-project"
               rm -rf $TARGET_DIR
               mkdir -p $TARGET_DIR
-              sleep 5
-              aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
+              
+              echo "--- Polling for S3 asset availability and network readiness ---"
+              until aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz; do
+                  echo "S3 asset infrastructure or IAM attachment profile not ready yet. Retrying in 3 seconds..."
+                  sleep 3
+              done
+              
               tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
               check_success "S3 Payload Download and Extraction"
 
@@ -129,7 +135,7 @@ resource "aws_launch_template" "app_server" {
               mkdir -p $TARGET_DIR/grafana_data
               aws s3 cp s3://${local.monitoring_bucket}/dashboards/node_exporter.json $TARGET_DIR/grafana/provisioning/dashboards/node_exporter.json
 
-              # 4. Inject Variables Safely (CRITICAL FIX: Passed Central S3 Storage Variable)
+              # 4. Inject Variables Safely
               ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
               cat <<ENVEOF > $TARGET_DIR/.env
               GF_SECURITY_ADMIN_USER='${var.grafana_admin_user}'
@@ -225,6 +231,7 @@ resource "aws_lb_target_group" "app_tg" {
 resource "aws_lb_listener" "http_ingress" {
   load_balancer_arn = aws_lb.app_alb.arn
   port              = "80"
+  protocol          = "HTTP"
 
   default_action {
     type             = "forward"
@@ -236,11 +243,11 @@ resource "aws_lb_listener" "http_ingress" {
 # AUTO SCALING GROUP
 # ====================================================================
 resource "aws_autoscaling_group" "app_asg" {
-  name_prefix      = "app-asg-"
   desired_capacity = 2
   max_size         = 4
   min_size         = 1
 
+  # FIXED: Pointed to your actual public subnets since no private subnets exist in network.tf
   vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
 
