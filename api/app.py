@@ -16,8 +16,20 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 s3_client = boto3.client('s3', region_name=AWS_REGION)
 sts_client = boto3.client('sts', region_name=AWS_REGION)
 
+# ====================================================================
+# PERFORMANCE FIX: Cache AWS Account ID globally at startup
+# This eliminates a 100ms-300ms blocking network call on every API request.
+# ====================================================================
+try:
+    AWS_ACCOUNT_ID = sts_client.get_caller_identity()["Account"]
+    print(f"[*] Boot Initialization: Successfully cached AWS Account ID: {AWS_ACCOUNT_ID}")
+except Exception as e:
+    print(f"[!] Warning: Could not resolve STS identity at startup ({e}).")
+    AWS_ACCOUNT_ID = ""
+
 def get_aws_account_id():
-    return sts_client.get_caller_identity()["Account"]
+    """Returns the globally cached AWS Account ID instantly without network latency."""
+    return AWS_ACCOUNT_ID
 
 def get_video_id(url):
     pattern = r'(?:v=|\/)([0-9A-Za-z_-]{11}).*'
@@ -31,7 +43,7 @@ def get_thumbnail():
     if not video_id: return jsonify({"error": "Invalid URL"}), 400 
 
     filename = f"thumb_{secure_filename(video_id)}.jpg"
-    account_id = get_aws_account_id() # Define account_id here
+    account_id = get_aws_account_id() # Returns cached global ID instantly
 
     try:
         s3_client.head_object(Bucket=S3_BUCKET, Key=filename, ExpectedBucketOwner=account_id)
@@ -62,7 +74,7 @@ def delete_file():
     try:
         s3_client.delete_object(
             Bucket=S3_BUCKET, Key=secure_filename(filename),
-            ExpectedBucketOwner=get_aws_account_id()
+            ExpectedBucketOwner=get_aws_account_id() # Returns cached global ID instantly
         )
         return jsonify({"message": "Deleted"}), 200
     except ClientError:
