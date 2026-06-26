@@ -86,7 +86,7 @@ resource "aws_launch_template" "app_server" {
   }
 
   network_interfaces {
-    associate_public_ip_address = true
+    associate_public_ip_address = false
     security_groups             = [aws_security_group.ec2_traffic.id]
   }
 
@@ -115,12 +115,17 @@ resource "aws_launch_template" "app_server" {
               ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose
               check_success "Docker Compose Installation"
 
-              # 2. Fetch Payload
+              # 2. Fetch Payload with Resilient Dynamic Polling Loop
               TARGET_DIR="/app/terraform-project"
               rm -rf $TARGET_DIR
               mkdir -p $TARGET_DIR
-              sleep 5
-              aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz
+              
+              echo "--- Polling for S3 asset availability and network readiness ---"
+              until aws s3 cp s3://${local.monitoring_bucket}/deployments/app-payload.tar.gz /tmp/app-payload.tar.gz; do
+                  echo "S3 asset infrastructure or IAM attachment profile not ready yet. Retrying in 3 seconds..."
+                  sleep 3
+              done
+              
               tar -xzf /tmp/app-payload.tar.gz -C $TARGET_DIR/
               check_success "S3 Payload Download and Extraction"
 
@@ -224,10 +229,8 @@ resource "aws_lb_target_group" "app_tg" {
 # ====================================================================
 resource "aws_lb_listener" "http_ingress" {
   load_balancer_arn = aws_lb.app_alb.arn
-  port              = "80"
 
   default_action {
-    type             = "forward"
     target_group_arn = aws_lb_target_group.app_tg.arn
   }
 }
@@ -236,12 +239,11 @@ resource "aws_lb_listener" "http_ingress" {
 # AUTO SCALING GROUP
 # ====================================================================
 resource "aws_autoscaling_group" "app_asg" {
-  name_prefix      = "app-asg-"
   desired_capacity = 2
   max_size         = 4
   min_size         = 1
 
-  vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  vpc_zone_identifier = [aws_subnet.private_1.id, aws_subnet.private_2.id]
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
 
   launch_template {
