@@ -50,6 +50,8 @@ def get_thumbnail():
     except ClientError:
         thumb_url = f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg"
         response = requests.get(thumb_url, timeout=10)
+        
+        # Fallback to high-quality if max-res is unavailable
         if response.status_code != 200:
             thumb_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
             response = requests.get(thumb_url, timeout=10)
