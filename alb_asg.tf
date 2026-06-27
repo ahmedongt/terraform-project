@@ -247,7 +247,7 @@ resource "aws_autoscaling_group" "app_asg" {
   max_size         = 4
   min_size         = 1
 
-  # SECURED: Moved target targets strictly to internal isolated private subnets
+  # SECURED: Moved targets strictly to internal isolated private subnets
   vpc_zone_identifier = [aws_subnet.private_1.id, aws_subnet.private_2.id]
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
 
@@ -258,6 +258,17 @@ resource "aws_autoscaling_group" "app_asg" {
 
   health_check_type         = "ELB"
   health_check_grace_period = 300
+
+  # ------------------------------------------------------------------
+  # AUTOMATICALLY CYCLE INSTANCES ON LAUNCH TEMPLATE CHANGES
+  # ------------------------------------------------------------------
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
+    triggers = ["launch_template"]
+  }
 
   lifecycle {
     create_before_destroy = true
