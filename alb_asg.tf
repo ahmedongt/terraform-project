@@ -86,8 +86,8 @@ resource "aws_launch_template" "app_server" {
   }
 
   network_interfaces {
-    # FIXED: Enabled public IP mapping so user-data can reach ECR and S3 via Internet Gateway
-    associate_public_ip_address = true
+    # SECURED: Disabled public IP allocation. Instances now route safely out through the NAT Gateway.
+    associate_public_ip_address = false
     security_groups             = [aws_security_group.ec2_traffic.id]
   }
 
@@ -194,7 +194,7 @@ resource "aws_launch_template" "app_server" {
 # ====================================================================
 resource "aws_lb" "app_alb" {
   name               = "custom-vpc-application-alb"
-  internal           = false
+  internal           = false  # Stays public facing to handle internet entry traffic
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb_traffic.id]
   subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
@@ -247,8 +247,8 @@ resource "aws_autoscaling_group" "app_asg" {
   max_size         = 4
   min_size         = 1
 
-  # FIXED: Pointed to your actual public subnets since no private subnets exist in network.tf
-  vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  # SECURED: Moved target targets strictly to internal isolated private subnets
+  vpc_zone_identifier = [aws_subnet.private_1.id, aws_subnet.private_2.id]
   target_group_arns   = [aws_lb_target_group.app_tg.arn]
 
   launch_template {
