@@ -212,6 +212,9 @@ resource "aws_lb_target_group" "app_tg" {
   port     = 80
   protocol = "HTTP"
   vpc_id   = aws_vpc.custom_vpc.id
+  
+  # OPTIMIZATION: Reduce deregistration delay to 10 seconds for rapid sandbox target cycling
+  deregistration_delay = 10
 
   health_check {
     enabled             = true
