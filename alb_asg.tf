@@ -277,3 +277,24 @@ resource "aws_autoscaling_group" "app_asg" {
     create_before_destroy = true
   }
 }
+
+# ====================================================================
+# AUTO SCALING POLICY (Target Tracking on ALB Requests)
+# ====================================================================
+resource "aws_autoscaling_policy" "scale_on_requests" {
+  name                   = "scale-on-alb-requests"
+  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      
+      # AWS requires both the ALB and Target Group suffixes to track this specific metric
+      resource_label = "${aws_lb.app_alb.arn_suffix}/${aws_lb_target_group.app_tg.arn_suffix}"
+    }
+    
+    # The threshold: Scale out if a single instance handles more than 500 requests
+    target_value = 500.0 
+  }
+}
