@@ -32,9 +32,14 @@ jobs:
             -backend-config="key=state/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
+      - name: Remove Orphaned State Lock
+        run: |
+          echo "Checking for and clearing stale S3 state locks..."
+          aws s3 rm s3://kali-terraform-state-storage-2026/state/terraform.tfstate.tflock || true
+
       - name: Terraform Destroy
         run: |
-          terraform destroy -auto-approve
+          terraform destroy -auto-approve -lock=false
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
