@@ -1,0 +1,1 @@
+python -m locust -f .\locustfile.py
